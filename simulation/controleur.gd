@@ -41,7 +41,7 @@ const TAILLE_FILTRE := 3          # mediane sur les 3 dernieres mesures ultrason
 const RECUL_MAX_MM := 200.0       # le suivi en marche arriere est limite aux courtes distances
 
 # ----- Gains PID (a regler dans cet ordre : kp, puis kd, puis ki)
-var kp := 1.8                     # degres par mm d'ecart
+var kp := 1.80                     # degres par mm d'ecart
 var ki := 0.5                     # degres par (mm*s)
 var kd := 0.08                    # degres par (mm/s)
 

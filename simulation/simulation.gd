@@ -18,7 +18,7 @@ func depart_parcours() -> Transform3D:
 const RAYON_BILLE := 0.0075
 # Cuvette du support de bille (plan support_bille_v2) : rayon de courbure 140 mm, bord a 20 mm du centre, 1,5 mm de profondeur
 const R_CUVETTE := 0.140
-const R_BORD := 0.020
+const R_BORD := 0.02
 const G := 9.81
 @export var masse_bille := 0.010      ## kg. PROVISOIRE : a peser (n'influence pas la chute, utile pour la suite).
 @export var amortissement_bille := 1.0 ## 1/s, pertes par roulement. PROVISOIRE : a comparer avec le vrai robot.

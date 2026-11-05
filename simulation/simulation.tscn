@@ -4,7 +4,3 @@
 
 [node name="Simulation" type="Node3D" unique_id=2076852182]
 script = ExtResource("1")
-masse_bille = null
-amortissement_bille = null
-piste_initiale = null
-mode_auto = null

@@ -77,6 +77,8 @@ var cap_retour_deg := 30.0        # cap pris pour revenir vers la ligne
 var gain_cap := 1.0               # degres de roue par degre d'erreur de cap
 var gain_lateral := 0.005         # rad de cap par mm d'ecart lateral (phase PARALLELE)
 var correction_laterale_max_deg := 10.0
+var ext_droite_mm := 85.0
+var ext_gauche_mm := 125.0
 # Dimensions (mm) : A MESURER sur la piste "Contournement" et sur la voiture
 var largeur_obstacle_mm := 100.0
 var longueur_obstacle_mm := 100.0 # dans le sens de la marche
@@ -127,6 +129,12 @@ var _parcours := 0.0              # distance parcourue en marche arriere (mm)
 var _distance_recul_mm := 0.0
 var _t_ligne_perdue := 0.0
 var _t_arret := 0.0
+var _erreur_mesuree := 0.0    # dernier ecart lu par les sondes (mm, > 0 = ligne a droite)
+var _cap_suivi := 0.0         # cap integre pendant le suivi (rad, > 0 = vers la droite)
+var _cap_ligne := 0.0         # valeur de _cap_suivi quand la voiture etait bien alignee
+var _ref_cap_ok := false
+var _dist_centre := 0.0       # distance parcourue ligne bien centree (mm)
+var _t_log := 0.0
 
 
 func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
@@ -139,6 +147,8 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 		if sondes[i] == 1:
 			somme += POSITIONS_SONDES_MM[i]
 			n += 1
+		if n > 0:
+			_erreur_mesuree = somme / n
 	var d_mm := _filtrer_distance(distance_cm, dt)
 
 	if _etat >= Etat.SORTIE and _t_etat > TIMEOUT_ETAT_S:
@@ -147,7 +157,8 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	var angle := 90.0
 	var cible := 0.0
 	var cote := float(cote_contournement)
-	var x_cible := largeur_obstacle_mm / 2.0 + largeur_voiture_mm / 2.0 + marge_laterale_mm
+	var ext := ext_droite_mm if cote_contournement > 0 else ext_gauche_mm
+	var x_cible := ext + largeur_voiture_mm / 2.0 + marge_laterale_mm
 
 	match _etat:
 		Etat.SUIVI:
@@ -265,6 +276,9 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 			if cote * _cap >= -deg_to_rad(3.0):
 				# cote ou se trouve la ligne si les sondes ne la voient pas (> 0 = a droite)
 				_derniere_erreur = clampf(_x_ligne - _x, -ERREUR_MAX_MM, ERREUR_MAX_MM)
+				_cap_suivi = _cap
+				_cap_ligne = 0.0
+				_ref_cap_ok = true
 				_changer_etat(Etat.SUIVI)
 
 	# Arret d'urgence pendant la manoeuvre (obstacle imprevu devant) : on attend, sans faire courir le timeout
@@ -280,6 +294,13 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	var angle_servo := int(round(angle))
 	if _etat >= Etat.SORTIE:
 		_integrer_odometrie(_cmd * mm_s_par_cmd, float(angle_servo), dt)
+	elif _etat == Etat.SUIVI:
+		_suivre_cap(n, dt, float(angle_servo))
+	if _etat >= Etat.SORTIE:
+		_t_log += dt
+		if _t_log >= 0.2:
+			_t_log = 0.0
+			print("%s cap=%.0f x=%.0f y=%.0f cmd=%.0f servo=%d" % [nom_etat(), rad_to_deg(_cap), _x, _y, _cmd, angle_servo])
 	return {"vitesse": int(round(_cmd)), "angle": angle_servo}
 
 
@@ -312,6 +333,8 @@ func reinitialiser() -> void:
 	_mesures.clear()
 	_d_filtre = -1.0
 	_t_absence = 0.0
+	_ref_cap_ok = false
+	_dist_centre = 0.0
 	_changer_etat(Etat.SUIVI)
 
 
@@ -412,11 +435,15 @@ func _changer_etat(e: Etat) -> void:
 
 
 func _demarrer_odometrie(d0_mm: float) -> void:
-	_x = 0.0
+	# repere de la ligne : x = 0 sur la ligne, y le long de la ligne
+	var psi := wrapf(_cap_suivi - _cap_ligne, -PI, PI) if _ref_cap_ok else 0.0
+	if absf(psi) > deg_to_rad(20.0):
+		psi = 0.0
+		print("DEPART MANOEUVRE ref_ok=%s psi=%.1f deg e=%.1f mm d0=%.0f mm" % [_ref_cap_ok, rad_to_deg(psi), _erreur_mesuree, d0_mm])
+	_cap = psi
+	_x = -(distance_sondes_mm * sin(psi) + _erreur_mesuree * cos(psi))
 	_y = 0.0
-	_cap = 0.0
-	# l'essieu arriere doit depasser l'arriere de l'obstacle (+ marge) avant de revenir vers la ligne
-	_y_fin_obstacle = d0_mm + longueur_avant_mm + longueur_obstacle_mm + marge_longitudinale_mm
+	_y_fin_obstacle = (d0_mm + longueur_avant_mm) * cos(psi) + longueur_obstacle_mm + marge_longitudinale_mm
 
 
 ## Position x de la ligne (repere odometrie) a partir de l'ecart lu par les sondes (mm, > 0 = a droite).
@@ -457,3 +484,20 @@ func _integrer_odometrie(v_mm_s: float, angle_servo: float, dt: float) -> void:
 	_x += v_mm_s * sin(_cap) * dt
 	_y += v_mm_s * cos(_cap) * dt
 	_parcours -= v_mm_s * dt          # > 0 en marche arriere
+	
+
+## Integre le cap pendant le suivi, et memorise le cap de la ligne quand la voiture roule bien centree.
+func _suivre_cap(n: int, dt: float, angle_servo: float) -> void:
+	var v := _cmd * mm_s_par_cmd
+	var delta := deg_to_rad((angle_servo - 90.0) / 45.0 * angle_roues_max_deg)
+	_cap_suivi += v / empattement_mm * tan(delta) * dt
+	# ligne centree sous les sondes sur ~80 mm de trajet : la voiture est parallele a la ligne
+	if n > 0 and absf(_erreur_mesuree) <= 1.0:
+		_dist_centre += absf(v) * dt
+		if _dist_centre >= 80.0:
+			_cap_ligne = _cap_suivi
+			_ref_cap_ok = true
+		else:
+			_dist_centre = 0.0
+			if n == 0:
+				_ref_cap_ok = false   # ligne perdue : la reference de cap n'est plus valable

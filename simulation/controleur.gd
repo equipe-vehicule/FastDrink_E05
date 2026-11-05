@@ -48,7 +48,7 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	var r := Vector2(90.0, 0.0)         # (angle servo, vitesse cible)
 	match _etat:
 		Etat.SUIVI:
-			r = _etat_suivi(somme, n, d_mm, dt)
+			r = _etat_suivi(sondes, d_mm, dt)
 
 		Etat.PAUSE:
 			if d_mm < 0.0:
@@ -111,6 +111,8 @@ func demarrer_recul(distance_mm: float) -> void:
 func nom_etat() -> String:
 	if _etat == Etat.CONTOURNEMENT:
 		return contournement.nom_phase()
+	if _etat == Etat.SUIVI:
+		return "SUIVI (ligne %s)" % suivi.nom_ligne()
 	return Etat.keys()[_etat]
 
 
@@ -128,8 +130,8 @@ func reinitialiser() -> void:
 
 
 ## Suivi de ligne, avec arret (ou recul) devant un obstacle. Retourne Vector2(angle, vitesse cible).
-func _etat_suivi(somme: float, n: int, d_mm: float, dt: float) -> Vector2:
-	var r := suivi.calculer(somme, n, dt)
+func _etat_suivi(sondes: Array, d_mm: float, dt: float) -> Vector2:
+	var r := suivi.calculer(sondes, dt)
 	var angle := r.x
 	var cible := r.y
 	var contourner := contournement.actif and recul.distance_auto_mm <= 0.0
@@ -160,5 +162,5 @@ func _changer_etat(e: Etat) -> void:
 	_etat = e
 	_t_etat = 0.0
 	if e == Etat.SUIVI:
-		suivi.reinitialiser_pid()
+		suivi.reinitialiser()
 		arret.relacher()

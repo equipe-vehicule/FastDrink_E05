@@ -24,6 +24,11 @@ extends Resource
 @export var taille_obstacle := Vector3(0.10, 0.15, 0.10) ## largeur, hauteur, profondeur (m)
 @export_range(1, 20) var ecart_min_obstacles := 4 ## en cases
 @export_range(1, 20) var cases_libres_depart := 3 ## pas d'obstacle sur les premieres cases
+## Cases entierement droites avant la case de l'obstacle : la voiture s'arrete ~400 mm avant son centre, dans l'axe.
+@export_range(0, 6) var cases_droites_avant := 2
+## Cases entierement droites apres : le contournement retrouve la ligne ~600 mm apres le centre de l'obstacle.
+## 2 + 2 : tous les contournements reussis en simulation ; plus = plus sur, mais moins d'obstacles places.
+@export_range(0, 6) var cases_droites_apres := 2
 
 func taille_case() -> float:
 	return 2.0 * rayon_virage

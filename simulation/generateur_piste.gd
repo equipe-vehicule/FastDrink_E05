@@ -6,7 +6,9 @@
 ##   - une case du chemin ne touche aucune autre case du chemin, sauf la precedente et la suivante
 ##     (sinon les sondes verraient le ruban voisin) ;
 ##   - les 2 premieres cases sont en ligne droite (le vehicule demarre droit) ;
-##   - un obstacle est pose sur une ligne droite de 3 cases, avec une case libre de chaque cote pour le contournement.
+##   - un obstacle est pose au milieu d'une ligne droite (cases_droites_avant + 1 + cases_droites_apres cases
+##     entierement droites), avec une case libre de chaque cote : le contournement revient sur la ligne
+##     environ 600 mm apres l'obstacle, la ligne doit encore etre droite a cet endroit.
 class_name GenerateurPiste
 extends RefCounted
 
@@ -112,11 +114,17 @@ func _placer_obstacles() -> void:
 			obstacles.append(i)
 			_marquer(chemin[i], OBSTACLE)
 	obstacles.sort()
+	if obstacles.size() < p.nb_obstacles:
+		push_warning("Piste aleatoire : %d obstacle(s) place(s) sur %d (pas assez de lignes droites ; augmenter proba_tout_droit ou la longueur)." % [obstacles.size(), p.nb_obstacles])
 
-## Ligne droite (case precedente, case, case suivante alignees) avec une case de chaque cote dans la grille.
+## Case i entierement droite, ainsi que cases_droites_avant cases avant et cases_droites_apres cases apres
+## (une case est droite quand la precedente, elle et la suivante sont alignees : sinon elle contient un virage),
+## avec une case de chaque cote dans la grille.
 func _droite_avec_place(i: int) -> bool:
+	if i - 1 - p.cases_droites_avant < 0 or i + 1 + p.cases_droites_apres >= chemin.size(): return false
 	var dir := chemin[i] - chemin[i - 1]
-	if chemin[i + 1] - chemin[i] != dir: return false
+	for k in range(i - p.cases_droites_avant, i + p.cases_droites_apres + 1):
+		if chemin[k] - chemin[k - 1] != dir or chemin[k + 1] - chemin[k] != dir: return false
 	var cote := Vector2i(dir.y, dir.x)
 	return _dans_grille(chemin[i] + cote) and _dans_grille(chemin[i] - cote)
 

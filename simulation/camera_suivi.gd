@@ -1,0 +1,24 @@
+## Camera qui suit une cible : vue poursuite (lissee) ou vue de dessus.
+class_name CameraSuivi
+extends Camera3D
+
+var cible: Node3D
+var vue_dessus := false
+
+func _ready() -> void:
+	near = 0.01
+	current = true
+
+func basculer_vue() -> void:
+	vue_dessus = not vue_dessus
+
+func _process(_dt: float) -> void:
+	if cible == null: return
+	var t := cible.global_transform
+	if vue_dessus:
+		global_position = t.origin + Vector3(0, 1.2, 0.001)
+		look_at(t.origin, -t.basis.z)
+	else:
+		var pos := t.origin + t.basis.z * 0.45 + Vector3(0, 0.30, 0)
+		global_position = global_position.lerp(pos, 0.1) if global_position != Vector3.ZERO else pos
+		look_at(t.origin + Vector3(0, 0.04, 0) - t.basis.z * 0.15, Vector3.UP)

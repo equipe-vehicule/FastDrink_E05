@@ -7,10 +7,12 @@ const ANGLE_MIN := 45.0           # servo, braquage maximal a gauche
 const ANGLE_MAX := 135.0          # servo, braquage maximal a droite
 
 # ----- Geometrie (mm) : A MESURER sur la voiture
-var empattement_mm := 140.0       # voir Vehicule.EMPATTEMENT (en m) x 1000
-var longueur_avant_mm := 160.0    # de l'essieu arriere au capteur ultrason
-var distance_sondes_mm := 160.0   # de l'essieu arriere a la barre de sondes de ligne (A MESURER)
+var empattement_mm := 138.0       # mesure : Vehicule.EMPATTEMENT (en m) x 1000
+var longueur_avant_mm := 193.0    # de l'essieu arriere au capteur ultrason (modele 3D ; a confirmer a la regle)
+var distance_sondes_mm := 217.0   # de l'essieu arriere a la barre de sondes de ligne (modele 3D ; a confirmer a la regle)
 var angle_roues_max_deg := 45.0   # angle reel des roues quand le servo est a 45 ou 135 (voir "Roues" au HUD)
+var vitesse_servo_deg_s := 300.0  # A MESURER : vitesse du servo de direction (deg de servo par s ; 0 = instantane)
+var demi_angle_ultrason_deg := 7.5  # demi-ouverture du cone de l'ultrason (HC-SR04 : environ 15 deg au total)
 
 # ----- Moteur et freinage
 var mm_s_par_cmd := 4.0           # vitesse reelle par unite de commande (0,40 m/s a 100) : A RECALCULER

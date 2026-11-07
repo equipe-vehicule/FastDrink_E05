@@ -1,12 +1,20 @@
 ## Scene de simulation du PiCar-S (equipe 05).
-## Touches : 1-6 choix de piste | R remettre au depart | M manuel/automatique
-##           Fleches : conduite manuelle | Espace : arret | C : vue | L : journal CSV on/off
+## Touches : 1-7 choix de piste (7 = aleatoire) | G nouvelle piste aleatoire | R remettre au depart
+##           M manuel/automatique | Fleches : conduite manuelle | Espace : arret | C : vue | L : journal CSV on/off
+## Ligne de commande (apres --) : --piste=6  --graine=1234
+##
+## Ce script ne fait qu'assembler les modules et decider qui conduit la voiture :
+##   Monde, Pistes, Vehicule, BilleCuvette, CameraSuivi, Hud, Entrees, MesureAcceleration, JournalCSV
 extends Node3D
 
 @export var masse_bille := 0.010      ## kg. PROVISOIRE : a peser (n'influence pas la chute, utile pour la suite).
 @export var amortissement_bille := 1.0 ## 1/s, pertes par roulement. PROVISOIRE : a comparer avec le vrai robot.
-@export var piste_initiale := 1        ## index dans Pistes.LISTE (1 = courbes)
+@export var piste_initiale := 1        ## index dans Pistes.LISTE (1 = courbes, 6 = aleatoire)
 @export var mode_auto := true
+@export var parametres_piste: ParametresPiste ## reglages de la piste aleatoire (vide = valeurs par defaut)
+## Frequence de la boucle du programme sur le vrai robot (lecture capteurs -> calcul -> commande).
+## Entre deux tours, la commande precedente reste appliquee. PROVISOIRE : a mesurer sur le Pi ; 0 = a chaque pas physique.
+@export var frequence_controle_hz := 50.0
 
 var vehicule: Vehicule
 var controleur := Controleur.new()
@@ -18,29 +26,63 @@ var entrees := Entrees.new()
 var mesure := MesureAcceleration.new()
 var journal := JournalCSV.new()
 var _temps := 0.0
+var _t_controle := 0.0
 
 func _ready() -> void:
 	add_child(Monde.new())
 	pistes = Pistes.new(); add_child(pistes)
+	if parametres_piste: pistes.parametres = parametres_piste
+	_lire_ligne_de_commande()
 	vehicule = Vehicule.new(); vehicule.name = "Vehicule"; add_child(vehicule)
 	bille = BilleCuvette.new()
 	bille.vehicule = vehicule; bille.masse = masse_bille; bille.amortissement = amortissement_bille
 	add_child(bille)
 	camera = CameraSuivi.new(); camera.cible = vehicule; add_child(camera)
 	hud = Hud.new(); add_child(hud)
+	_verifier_coherence()
 	_brancher_signaux()
 	charger_piste(piste_initiale)
 
+## Le controleur (ReglagesRobot) et le modele (Vehicule) doivent decrire le meme robot :
+## sinon l'odometrie du contournement calcule avec de mauvaises dimensions. On signale chaque ecart.
+func _verifier_coherence() -> void:
+	if not vehicule.has_method("geometrie_mm"):
+		push_error("vehicule.gd n'est pas a jour (pas de servo lent, de cone ultrason ni de geometrie_mm) : remplacer le fichier.")
+		return
+	var r: ReglagesRobot = controleur.robot
+	var g: Dictionary = vehicule.geometrie_mm()
+	var comparaisons := [
+		# [nom, valeur du controleur, valeur du modele, tolerance]
+		["empattement_mm", r.empattement_mm, g["empattement_mm"], 2.0],
+		["distance_sondes_mm", r.distance_sondes_mm, g["distance_sondes_mm"], 5.0],
+		["longueur_avant_mm", r.longueur_avant_mm, g["longueur_avant_mm"], 5.0],
+		["angle_roues_max_deg", r.angle_roues_max_deg, vehicule.angle_roues_max_deg, 0.5],
+		["vitesse_servo_deg_s", r.vitesse_servo_deg_s, vehicule.vitesse_servo_deg_s, 1.0],
+		["demi_angle_ultrason_deg", r.demi_angle_ultrason_deg, vehicule.demi_angle_ultrason_deg, 0.1],
+		["mm_s_par_cmd", r.mm_s_par_cmd, vehicule.vitesse_max * 10.0, 0.05],
+	]
+	for c in comparaisons:
+		if absf(c[1] - c[2]) > c[3]:
+			push_warning("Controleur et Vehicule different : %s = %.2f dans ReglagesRobot, %.2f dans le modele." % [c[0], c[1], c[2]])
+
+## Ex. : godot --path . -- --piste=6 --graine=1234  (pour rejouer exactement la meme piste)
+func _lire_ligne_de_commande() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--piste="): piste_initiale = int(arg.get_slice("=", 1))
+		elif arg.begins_with("--graine="): pistes.parametres.graine = int(arg.get_slice("=", 1))
+
 func _brancher_signaux() -> void:
 	entrees.piste_demandee.connect(charger_piste)
+	entrees.nouvelle_piste_aleatoire.connect(func(): charger_piste(Pistes.INDEX_ALEATOIRE, randi_range(1, 999999)))
 	entrees.remise_demandee.connect(remettre_au_depart)
 	entrees.mode_bascule.connect(func(): mode_auto = not mode_auto)
 	entrees.vue_bascule.connect(camera.basculer_vue)
-	entrees.journal_bascule.connect(journal.basculer)
+	entrees.journal_bascule.connect(func(): journal.basculer(pistes.actuelle))
 	bille.chute.connect(func(): print("BILLE TOMBEE a t = %.2f s (acceleration max atteinte %.2f m/s2)" % [_temps, mesure.maximum]))
 
-func charger_piste(i: int) -> void:
-	pistes.charger(i)
+func charger_piste(i: int, graine := 0) -> void:
+	pistes.charger(i, graine)
+	journal.nouvelle_piste(pistes.actuelle)   # sans effet si le journal est arrete
 	remettre_au_depart()
 
 func remettre_au_depart() -> void:
@@ -55,10 +97,14 @@ func remettre_au_depart() -> void:
 func _physics_process(dt: float) -> void:
 	_temps += dt
 	entrees.lire(Pistes.LISTE.size())
-	_conduire(dt)
+	# Le programme du robot ne tourne qu'a frequence_controle_hz : entre deux tours, la commande reste la meme
+	_t_controle += dt
+	if frequence_controle_hz <= 0.0 or _t_controle >= 1.0 / frequence_controle_hz - 1e-6:
+		_conduire(_t_controle)
+		_t_controle = 0.0
 	mesure.ajouter(vehicule.vitesse, dt)
 	bille.mettre_a_jour(dt)   # appele ici (et non dans la bille) pour garder l'ordre : commande -> mesure -> bille
-	journal.ecrire(_temps, vehicule, bille.tombee)
+	journal.ecrire(_temps, vehicule, bille.tombee, controleur)
 
 ## Qui conduit : personne tant que la bille n'est pas prete, sinon le controleur ou le clavier.
 func _conduire(dt: float) -> void:
@@ -71,4 +117,4 @@ func _conduire(dt: float) -> void:
 		vehicule.commander(entrees.cmd_vitesse, entrees.cmd_angle)
 
 func _process(_dt: float) -> void:
-	hud.afficher(pistes.nom(), mode_auto, vehicule, mesure, bille.tombee, journal.actif())
+	hud.afficher(pistes.nom(), mode_auto, vehicule, mesure, bille.tombee, journal.actif(), controleur.nom_etat())

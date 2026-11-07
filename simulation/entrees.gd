@@ -4,6 +4,7 @@ class_name Entrees
 extends RefCounted
 
 signal piste_demandee(index: int)
+signal nouvelle_piste_aleatoire
 signal remise_demandee
 signal mode_bascule
 signal vue_bascule
@@ -19,6 +20,7 @@ func reinitialiser() -> void:
 func lire(nb_pistes: int) -> void:
 	for i in nb_pistes:
 		if _appui(KEY_1 + i): piste_demandee.emit(i)
+	if _appui(KEY_G): nouvelle_piste_aleatoire.emit()
 	if _appui(KEY_R): remise_demandee.emit()
 	if _appui(KEY_M): mode_bascule.emit()
 	if _appui(KEY_C): vue_bascule.emit()

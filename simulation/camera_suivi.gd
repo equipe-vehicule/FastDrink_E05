@@ -7,6 +7,7 @@ var vue_dessus := false
 
 func _ready() -> void:
 	near = 0.01
+	far = 80.0          # profondeur plus precise : route, bordures et ruban sont a quelques dixiemes de mm l un de l autre
 	current = true
 
 func basculer_vue() -> void:

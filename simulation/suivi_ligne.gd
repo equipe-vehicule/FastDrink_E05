@@ -7,8 +7,12 @@
 ##                   pendant delai_entre_sondes_s au lieu de braquer a fond.
 ##   PERDUE        : plus aucune sonde depuis plus longtemps, ou la ligne etait au bord : braquage maximal
 ##                   du dernier cote vu (comme avant).
-##   Motif incoherent (sondes non voisines, ou 4 sondes et plus : croisement, marque, reflet) : lecture ignoree,
-##   on garde la commande precedente.
+##   4 ou 5 sondes voisines : la voiture coupe la ligne de face (apres un contournement, un demi-tour) : ligne VUE,
+##   au milieu des sondes allumees. (Avant, ce motif etait ignore : la voiture se croyait perdue et continuait
+##   de chercher alors qu'elle etait sur la ligne - journal Godot du 6 novembre.)
+##   ARRIVEE : 5 sondes allumees pendant pas_arrivee mesures alors que la voiture suivait la ligne bien centree depuis
+##   aligne_avant_arrivee_s : c'est la barre d'arrivee posee en travers de la piste (`arrivee` passe a true).
+##   Motif incoherent (sondes non voisines : reflet) : lecture ignoree, on garde la commande precedente.
 ## Sans cette detection, une seule lecture "0 0 0 0 0" erronee declenchait un braquage maximal.
 ##
 ## COMMANDE : PID inchange (erreur en mm -> angle servo), vitesse reduite quand on est decentre.
@@ -33,6 +37,14 @@ var vitesse_virage := 15          # grand ecart ou ligne perdue
 
 # ----- Detection
 var delai_entre_sondes_s := 0.15  # duree pendant laquelle une disparition de la ligne est toleree
+## Ligne perdue plus longtemps (fin du parcours) : arret (0 = ne jamais s'arreter).
+## Pas moins de 8 s : en virage serre, les sondes (217 mm devant l'essieu) sortent de la ligne et la voiture
+## la retrouve en tournant, ce qui peut prendre plusieurs secondes.
+var abandon_s := 8.0
+# ----- Ligne d'arrivee (barre noire en travers de la piste)
+var aligne_avant_arrivee_s := 0.5 # la voiture doit suivre la ligne bien centree depuis au moins ca
+var pas_arrivee := 3              # mesures consecutives avec les 5 sondes allumees
+var arrivee := false
 
 ## Dernier ecart non nul (mm) : sert a savoir de quel cote chercher la ligne quand on la perd.
 ## Mis a jour aussi par le recul et par la fin du contournement.
@@ -46,6 +58,8 @@ var _erreur_prec := 0.0
 var _integrale := 0.0
 var _derivee := 0.0
 var _ligne_visible_avant := false
+var _t_aligne := 0.0              # temps depuis lequel la ligne est vue bien centree
+var _n_cinq := 0                  # mesures consecutives avec les 5 sondes allumees
 
 ## Retourne Vector2(somme des positions des sondes allumees, nombre de sondes allumees).
 static func lire(sondes: Array) -> Vector2:
@@ -67,6 +81,12 @@ func reinitialiser() -> void:
 	geler()
 	_ligne_visible_avant = false
 	ligne = Ligne.PERDUE
+	_t_aligne = 0.0
+	_n_cinq = 0
+
+## Temps (s) depuis lequel aucune sonde ne voit la ligne.
+func temps_sans_ligne() -> float:
+	return _t_sans_ligne
 
 func nom_ligne() -> String:
 	return Ligne.keys()[ligne]
@@ -76,20 +96,32 @@ func calculer(sondes: Array, dt: float) -> Vector2:
 	var e := _position(sondes)
 	if is_inf(e):
 		return _derniere_sortie                # motif incoherent : lecture ignoree
+	# Barre d'arrivee : 5 sondes alors que la voiture suivait la ligne bien centree
+	if sondes.count(1) == 5 and _t_aligne >= aligne_avant_arrivee_s:
+		_n_cinq += 1
+		if _n_cinq >= pas_arrivee:
+			arrivee = true
+		return _derniere_sortie                # on garde le cap en attendant la confirmation
+	_n_cinq = 0
 	if is_nan(e):
 		_t_sans_ligne += dt
 		if ligne != Ligne.PERDUE and absf(_erreur) < ERREUR_MAX_MM and _t_sans_ligne <= delai_entre_sondes_s:
 			ligne = Ligne.ENTRE_SONDES
 			return _derniere_sortie
 		ligne = Ligne.PERDUE
+		if abandon_s > 0.0 and _t_sans_ligne > abandon_s:
+			_derniere_sortie = Vector2(90.0, 0.0)   # on ne tourne pas indefiniment en rond a l'aveugle
+			return _derniere_sortie
 	else:
 		_t_sans_ligne = 0.0
 		_erreur = e
 		ligne = Ligne.VUE
 	_derniere_sortie = _pid(e, dt)
+	_t_aligne = _t_aligne + dt if ligne == Ligne.VUE and absf(_erreur) <= 19.0 else 0.0
 	return _derniere_sortie
 
-## Position de la ligne (mm, > 0 = a droite). NAN = aucune sonde ; INF = motif incoherent.
+## Position de la ligne (mm, > 0 = a droite). NAN = aucune sonde ; INF = motif incoherent (sondes non voisines).
+## 4 ou 5 sondes voisines (ligne coupee de face) : position = milieu des sondes allumees.
 func _position(sondes: Array) -> float:
 	var premiere := -1
 	var derniere := -1
@@ -101,7 +133,7 @@ func _position(sondes: Array) -> float:
 			n += 1
 	if n == 0:
 		return NAN
-	if n >= 4 or derniere - premiere + 1 != n:
+	if derniere - premiere + 1 != n:
 		return INF
 	return (POSITIONS_SONDES_MM[premiere] + POSITIONS_SONDES_MM[derniere]) / 2.0
 

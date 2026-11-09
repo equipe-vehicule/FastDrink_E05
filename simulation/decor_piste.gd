@@ -73,7 +73,8 @@ static func positions_libres(rng: RandomNumberGenerator, mini: Vector2, maxi: Ve
 	return res
 
 ## Arbres (sapins et feuillus), buissons et rochers, en MultiMesh (un appel de dessin par type).
-static func vegetation(places: Array[Vector2], rng: RandomNumberGenerator, echelle := 1.0) -> Node3D:
+## ombres = false pour la foret lointaine : les ombres redessinent tous les arbres et ralentissaient la simulation.
+static func vegetation(places: Array[Vector2], rng: RandomNumberGenerator, echelle := 1.0, ombres := true) -> Node3D:
 	var racine := Node3D.new()
 	racine.name = "Vegetation"
 	var troncs: Array[Transform3D] = []
@@ -118,15 +119,15 @@ static func vegetation(places: Array[Vector2], rng: RandomNumberGenerator, echel
 	buisson.radius = 0.06; buisson.height = 0.1; buisson.radial_segments = 7; buisson.rings = 3
 	var rocher := SphereMesh.new()
 	rocher.radius = 0.05; rocher.height = 0.07; rocher.radial_segments = 5; rocher.rings = 3
-	racine.add_child(_multi(tronc, troncs, [], Color(0.4, 0.27, 0.15)))
-	racine.add_child(_multi(cone, sapins, c_sapins))
-	racine.add_child(_multi(cone_haut, sapins_haut, c_sapins))
-	racine.add_child(_multi(boule, feuillus, c_feuillus))
-	racine.add_child(_multi(buisson, buissons, c_buissons))
-	racine.add_child(_multi(rocher, rochers, c_rochers))
+	racine.add_child(_multi(tronc, troncs, [], Color(0.4, 0.27, 0.15), ombres))
+	racine.add_child(_multi(cone, sapins, c_sapins, Color.WHITE, ombres))
+	racine.add_child(_multi(cone_haut, sapins_haut, c_sapins, Color.WHITE, ombres))
+	racine.add_child(_multi(boule, feuillus, c_feuillus, Color.WHITE, ombres))
+	racine.add_child(_multi(buisson, buissons, c_buissons, Color.WHITE, ombres))
+	racine.add_child(_multi(rocher, rochers, c_rochers, Color.WHITE, ombres))
 	return racine
 
-static func _multi(mesh: Mesh, xf: Array[Transform3D], couleurs: Array, couleur := Color.WHITE) -> MultiMeshInstance3D:
+static func _multi(mesh: Mesh, xf: Array[Transform3D], couleurs: Array, couleur := Color.WHITE, ombres := true) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
@@ -141,6 +142,8 @@ static func _multi(mesh: Mesh, xf: Array[Transform3D], couleurs: Array, couleur 
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
 	mi.material_override = mat
+	if not ombres:
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
 
 ## Bande plate sans collision le long des points (route).

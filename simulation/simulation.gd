@@ -29,6 +29,8 @@ var _temps := 0.0
 var _t_controle := 0.0
 
 func _ready() -> void:
+	# Par defaut Godot fait au plus 8 pas physiques par image : a 240 pas/s, sous 30 images/s, le temps ralentit
+	Engine.max_physics_steps_per_frame = 24
 	add_child(Monde.new())
 	pistes = Pistes.new(); add_child(pistes)
 	if parametres_piste: pistes.parametres = parametres_piste

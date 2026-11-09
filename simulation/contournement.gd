@@ -37,7 +37,11 @@ extends RefCounted
 ##                des que les sondes voient la ligne (hors de la ligne entrante, derriere l'obstacle) :
 ##   SORTIE_ORBITE : elle tourne vers l'exterieur jusqu'a pointer a l'oppose de l'obstacle, puis le PID suit la ligne
 ##                dans le bon sens (en s'eloignant de l'obstacle).
-enum Phase { ECART, LONGER, RETOUR, RECHERCHE, CROISEMENT, ALIGNEMENT, ORBITE, SORTIE_ORBITE }
+##   TRAVERS    : la ligne est coupee presque de face (au moins n_sondes_travers sondes : plus de ~60 deg avec le cap).
+##                L'ecart lu vaut ~0 : le PID partait tout droit et sortait de la ligne (journaux Godot : ligne revue
+##                6 a 8 % du temps ensuite). Braquage maximal du cote qui s'eloigne de l'obstacle : les sondes passent
+##                la ligne, puis y reviennent apres ~70 deg de rotation, et le PID reprend.
+enum Phase { ECART, LONGER, RETOUR, RECHERCHE, CROISEMENT, ALIGNEMENT, ORBITE, SORTIE_ORBITE, TRAVERS }
 
 var actif := true                 # false = on s'arrete devant l'obstacle (test "Arret devant obstacle")
 var cote_par_defaut := 1          # 1 = par la droite, -1 = par la gauche (en ligne droite)
@@ -85,6 +89,10 @@ var pente_ligne_tournee := -0.2      # glissement (mm de sondes par mm parcouru,
 var sortie_rapide_mm := 70.0         # ligne perdue apres moins que ca : vue sous un angle fort, elle a tourne
 var angle_ligne_tournee_deg := 15.0  # angle de la ligne balayee (par rapport au cap de depart) au-dela : a tourne
 var croisement_max_mm := 150.0       # ligne perdue depuis plus que ca en CROISEMENT : le PID reprend la main
+# Ligne coupee de face (TRAVERS)
+var n_sondes_travers := 3
+var rotation_travers_min_deg := 35.0 # avant, la ligne encore sous les sondes est celle que l'on vient de couper
+var rotation_travers_max_deg := 150.0
 # Dimensions (mm) : A MESURER sur la voiture et sur les obstacles de l'epreuve
 var largeur_obstacle_min_mm := 100.0
 ## Dans le sens de la marche : on longe toujours au moins ca. 150 plutot que 200 : detour plus court, la ligne a moins
@@ -98,6 +106,7 @@ var phase := Phase.ECART
 var cote := 1
 var termine := false
 var echec := false
+var hors_ligne := false           # evitement d'un obstacle qui n'est pas sur la ligne (demarrer_hors_ligne)
 
 var _robot: ReglagesRobot
 var _odo: Odometrie
@@ -121,6 +130,8 @@ var _n_echos := 0                 # pas consecutifs avec un echo brut devant
 var _y_fin := 0.0                 # y de l'essieu a atteindre avant de revenir
 var _x_ligne := 0.0               # position x de la ligne, reperee quand les sondes la revoient
 var _cap_debut_recherche := 0.0
+var _cote_travers := 1            # 1 = braquage a droite (phase TRAVERS)
+var _cap_travers := 0.0
 
 func _init(robot: ReglagesRobot, odo: Odometrie) -> void:
 	_robot = robot
@@ -132,6 +143,7 @@ func demarrer(d0_mm: float, braquage_moyen: float) -> void:
 	cote = cote_par_defaut
 	if cote_interieur_virage and absf(braquage_moyen) >= seuil_virage_deg:
 		cote = 1 if braquage_moyen > 0.0 else -1
+	hors_ligne = false
 	_nouvel_obstacle(d0_mm)
 	_x_requis = largeur_obstacle_min_mm / 2.0 + largeur_voiture_mm / 2.0 + marge_laterale_mm
 	termine = false
@@ -140,6 +152,13 @@ func demarrer(d0_mm: float, braquage_moyen: float) -> void:
 	_zones = [Vector2(d0_mm + _robot.longueur_avant_mm, d0_mm + _robot.longueur_avant_mm + longueur_obstacle_max_mm)]
 	_centre = Vector2(0.0, d0_mm + _robot.longueur_avant_mm + longueur_obstacle_max_mm / 2.0)
 	_n_echos = 0
+
+## La voiture n'est pas sur la ligne : on contourne l'obstacle du cote demande (ECART, LONGER), puis on rend la main.
+## Toute ligne vue en LONGER (sauf la ligne deja parcourue) est reprise ; aucune recherche de ligne derriere l'obstacle, elle n'y passe pas forcement.
+func demarrer_hors_ligne(d0_mm: float, cote_voulu: int) -> void:
+	demarrer(d0_mm, 0.0)
+	cote = cote_voulu
+	hors_ligne = true
 
 func nom_phase() -> String:
 	return Phase.keys()[phase] + (" (droite)" if cote > 0 else " (gauche)")
@@ -208,6 +227,7 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 	var x := c * _odo.x               # decalage lateral, positif du cote du contournement
 	var angle := 90.0
 	var obstacle_devant := false
+	_detecter_ligne_de_face(somme, n)
 	if phase == Phase.LONGER or phase == Phase.RETOUR:
 		obstacle_devant = _nouvel_obstacle_devant(d_mm, d_brut_mm)
 	else:
@@ -239,7 +259,12 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 			var corr := clampf((_x_requis - x) * gain_lateral,
 					-deg_to_rad(correction_laterale_max_deg), deg_to_rad(correction_laterale_max_deg))
 			angle = _angle_vers_cap(c * corr)
-			if n > 0 and (_ligne_dans_couloir(somme / n) or _ligne_en_travers(somme / n)):
+			if hors_ligne and n > 0 and not _ligne_entrante(somme / n):
+				_reprise_par_pid(somme / n)         # pas la ligne deja parcourue : la voiture repartirait en arriere
+			elif hors_ligne and _odo.y >= _y_fin:
+				_e_reprise = c * SuiviLigne.ERREUR_MAX_MM
+				termine = true
+			elif n > 0 and (_ligne_dans_couloir(somme / n) or _ligne_en_travers(somme / n)):
 				_reprise_par_pid(somme / n)        # pres d'un virage, la ligne revient sous la voiture
 			elif obstacle_devant:
 				_relancer_ecart(d_mm)
@@ -306,6 +331,12 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 			elif absf(_odo.cap - _cap_debut_recherche) > deg_to_rad(recherche_max_deg):
 				echec = true
 
+		Phase.TRAVERS:
+			angle = 90.0 + _cote_travers * braquage_manoeuvre
+			var rotation_faite := absf(wrapf(_odo.cap - _cap_travers, -PI, PI))
+			if (rotation_faite >= deg_to_rad(rotation_travers_min_deg) and n > 0 and n <= 2) 					or rotation_faite >= deg_to_rad(rotation_travers_max_deg):
+				_reprise_par_pid(somme / n if n > 0 else _cote_travers * SuiviLigne.ERREUR_MAX_MM)
+
 		Phase.CROISEMENT:
 			if _ligne_a_tourne(somme, n):
 				_reprise_par_pid(_e_vu)
@@ -321,6 +352,19 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 			if c * _odo.cap + _inertie_cap(v_mm_s) >= -deg_to_rad(3.0):
 				termine = true
 	return Vector2(angle, float(vitesse_manoeuvre))
+
+## Passe en TRAVERS si la ligne de sortie est coupee de face. Cote du virage : celui qui s'eloigne de l'obstacle.
+func _detecter_ligne_de_face(somme: float, n: int) -> void:
+	if hors_ligne or n < n_sondes_travers or not phase in [Phase.LONGER, Phase.RETOUR, Phase.CROISEMENT, Phase.ALIGNEMENT, Phase.ORBITE, Phase.SORTIE_ORBITE]:
+		return
+	var e := somme / n
+	if _ligne_entrante(e) or (phase == Phase.LONGER and not _ligne_en_travers(e)):
+		return
+	var droite := Vector2(cos(_odo.cap), -sin(_odo.cap))
+	var q := Vector2(_odo.x + _robot.distance_sondes_mm * sin(_odo.cap), _odo.y + _robot.distance_sondes_mm * cos(_odo.cap)) + droite * e
+	_cote_travers = 1 if (q - _centre).dot(droite) > 0.0 else -1
+	_cap_travers = _odo.cap
+	phase = Phase.TRAVERS
 
 ## Un obstacle est vu a d_mm devant : il faudra le depasser entierement avant de revenir.
 func _nouvel_obstacle(d_mm: float) -> void:

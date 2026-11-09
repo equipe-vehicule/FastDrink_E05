@@ -26,9 +26,6 @@ func _creer_ciel() -> void:
 	e.ambient_light_energy = 0.9
 	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	e.tonemap_white = 6.0
-	e.ssao_enabled = true             # ombres de contact (Forward+ uniquement, ignore sinon)
-	e.glow_enabled = true
-	e.glow_intensity = 0.4
 	e.fog_enabled = true              # brume : cache le bord du paysage
 	e.fog_light_color = Color(0.7, 0.8, 0.92)
 	e.fog_density = 0.02
@@ -44,7 +41,8 @@ func _creer_soleil() -> void:
 	soleil.light_color = Color(1.0, 0.96, 0.88)
 	soleil.light_energy = 1.2
 	soleil.shadow_enabled = true
-	soleil.directional_shadow_max_distance = 12.0
+	soleil.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL   # une seule passe d'ombres au lieu de quatre
+	soleil.directional_shadow_max_distance = 6.0
 	add_child(soleil)
 
 # Sol sur sa propre couche (ni ruban ni obstacle). Sa collision ne change pas ; on le voit en herbe (_creer_paysage).
@@ -74,5 +72,5 @@ func _creer_paysage() -> void:
 		var p := Vector2(rng.randf_range(-20, 20), rng.randf_range(-20, 20))
 		if absf(p.x) > 4.6 or absf(p.y) > 4.6:
 			places.append(p)
-	var foret := DecorPiste.vegetation(places, rng, 2.5)   # arbres plus grands au loin : effet de profondeur
+	var foret := DecorPiste.vegetation(places, rng, 2.5, false)   # arbres plus grands au loin : effet de profondeur
 	add_child(foret)

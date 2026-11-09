@@ -40,7 +40,7 @@ var delai_entre_sondes_s := 0.15  # duree pendant laquelle une disparition de la
 ## Ligne perdue plus longtemps (fin du parcours) : arret (0 = ne jamais s'arreter).
 ## Pas moins de 8 s : en virage serre, les sondes (217 mm devant l'essieu) sortent de la ligne et la voiture
 ## la retrouve en tournant, ce qui peut prendre plusieurs secondes.
-var abandon_s := 8.0
+var abandon_s := 40.0
 # ----- Ligne d'arrivee (barre noire en travers de la piste)
 var aligne_avant_arrivee_s := 0.5 # la voiture doit suivre la ligne bien centree depuis au moins ca
 var pas_arrivee := 3              # mesures consecutives avec les 5 sondes allumees
@@ -81,6 +81,7 @@ func reinitialiser() -> void:
 	geler()
 	_ligne_visible_avant = false
 	ligne = Ligne.PERDUE
+	_t_sans_ligne = 0.0               # sinon RETROUVER repartait juste apres un contournement (journal du 6 novembre)
 	_t_aligne = 0.0
 	_n_cinq = 0
 

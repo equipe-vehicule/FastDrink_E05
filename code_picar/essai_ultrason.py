@@ -21,7 +21,8 @@ def main():
         for i in range(1, args.n + 1):
             d = capteur.mesurer_mm()
             mesures.append(d)
-            print(f"{i:4d}  " + ("mesure ratée (-1)" if d == MESURE_RATEE else f"{d:7.1f} mm"))
+            # print(f"{i:4d}  " + ("mesure ratée (-1)" if d == MESURE_RATEE else f"{d:7.1f} mm"))
+            print(f"{i:4d}"))
 
     valides = [d for d in mesures if d != MESURE_RATEE]
     print(f"\nMesures : {len(mesures)}  ratées : {len(mesures) - len(valides)}")

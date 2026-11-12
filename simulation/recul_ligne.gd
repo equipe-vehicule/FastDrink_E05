@@ -1,4 +1,5 @@
-## Suivi de la ligne en reculant sur de courtes distances (< 200 mm).
+## Suivi de la ligne en reculant sur de courtes distances (< ReglagesEpreuve.RECUL_MAX_MM).
+## Utilise devant chaque obstacle (Controleur, etat RECUL_OBSTACLE) et en fin de ligne (piste Recul).
 ##
 ## Les sondes sont a l'avant, donc a l'arriere du mouvement. Garder les sondes sur la ligne serait
 ## instable (l'essieu, qui mene, s'ecarterait de plus en plus). On asservit plutot un point virtuel
@@ -6,19 +7,20 @@
 class_name ReculLigne
 extends RefCounted
 
-const RECUL_MAX_MM := 200.0       # le suivi en marche arriere est limite aux courtes distances
 
 enum Fin { EN_COURS, TERMINE, LIGNE_PERDUE }
 
 var vitesse_recul_ligne := 15     # commande de recul (valeur absolue)
 var point_virtuel_mm := 100.0     # distance du point asservi derriere l'essieu arriere (plus grand = plus doux)
 var gain_recul := 1.5             # 1/s : vitesse de convergence du point virtuel vers la ligne
-var ligne_perdue_recul_s := 0.3   # arret si la ligne reste invisible plus longtemps
+var ligne_perdue_recul_s := 0.3   # ligne invisible plus longtemps : perdue
+## Ligne perdue en cours de recul : true = finir la distance tout droit (odometrie), false = s'arreter (Fin.LIGNE_PERDUE).
+## Voiture arretee de travers en sortie de virage (jusqu'a 19 deg) : en reculant, les sondes quittent la ligne apres
+## ~110 mm (banc du 12 nov. : reculs de 78 a 108 mm pour 150 demandes). La distance de recul est imposee, et la ligne
+## droite avant l'obstacle garantit la place.
+var finir_sans_ligne := true
+var ligne_perdue_en_route := false # diagnostic : la fin du recul s'est faite sans la ligne
 var reprendre_apres_recul := false # true = repart en marche avant a la fin du recul, false = reste arrete
-# Test "recul" sans toucher au reste du jeu : apres l'arret devant l'obstacle, on recule de distance_auto_mm.
-# 0 = desactive (comportement normal : arret ou contournement).
-var distance_auto_mm := 0.0
-var attente_auto_s := 1.0
 
 var fin := Fin.EN_COURS
 
@@ -34,10 +36,12 @@ func _init(robot: ReglagesRobot, odo: Odometrie, suivi: SuiviLigne) -> void:
 	_suivi = suivi
 
 ## La voiture doit etre sur la ligne et a peu pres dans son axe : ce cap sert de reference (cap = 0).
-func demarrer(distance_mm: float) -> void:
-	_distance_mm = clampf(distance_mm, 0.0, RECUL_MAX_MM)
+## attente_ligne_s : duree toleree sans ligne au debut (recul lance apres la fin de la ligne, sondes au-dela du ruban).
+func demarrer(distance_mm: float, attente_ligne_s := 0.0) -> void:
+	_distance_mm = clampf(distance_mm, 0.0, ReglagesEpreuve.RECUL_MAX_MM)
 	_odo.reinitialiser()
-	_t_ligne_perdue = 0.0
+	_t_ligne_perdue = -attente_ligne_s
+	ligne_perdue_en_route = false
 	fin = Fin.EN_COURS
 
 ## Retourne Vector2(angle servo, vitesse cible). Regarder `fin` ensuite.
@@ -51,10 +55,14 @@ func calculer(somme: float, n: int, dt: float, cmd: float) -> Vector2:
 	if restante <= ArretObstacle.ARRET_TOLERANCE_MM:
 		fin = Fin.TERMINE
 		return Vector2(90.0, 0.0)
-	if _t_ligne_perdue > ligne_perdue_recul_s:
-		fin = Fin.LIGNE_PERDUE               # ligne perdue : on ne recule pas a l'aveugle
-		return Vector2(90.0, 0.0)
 	var angle := _angle_recul(_suivi.derniere_erreur, cmd)
+	if _t_ligne_perdue > ligne_perdue_recul_s:
+		if not finir_sans_ligne:
+			fin = Fin.LIGNE_PERDUE           # ligne perdue : on ne recule pas a l'aveugle
+			return Vector2(90.0, 0.0)
+		ligne_perdue_en_route = true
+		angle = 90.0                         # fin du recul tout droit
+
 	# meme profil de freinage que devant un obstacle, pour s'arreter a la distance demandee
 	var v_freinage := _robot.vitesse_freinage(restante)
 	var cible := -minf(float(vitesse_recul_ligne), maxf(v_freinage, float(_robot.vitesse_approche_min)))

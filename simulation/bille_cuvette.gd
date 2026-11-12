@@ -84,6 +84,12 @@ func _acceleration_locale(t: Transform3D, dt: float) -> Vector2:
 	_p1 = p; _n_mesures += 1
 	return Vector2(t.basis.x.dot(a_monde), -t.basis.z.dot(a_monde))
 
+## Position de la bille rapportee au bord de la cuvette : 0 = au centre, 1 = elle tombe.
+func taux_bord() -> float:
+	if tombee:
+		return 1.0
+	return _q.length() * R_CUVETTE / (R_CUVETTE - RAYON) / R_BORD
+
 func _tomber(t: Transform3D) -> void:
 	tombee = true
 	freeze = false

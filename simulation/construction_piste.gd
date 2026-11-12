@@ -5,7 +5,8 @@
 ## Dans chaque case, le ruban va du milieu du bord d'entree au milieu du bord de sortie :
 ##   - meme direction  -> segment droit ;
 ##   - virage          -> quart de cercle de rayon = demi-case (= rayon de la piste), centre sur le coin interieur.
-## Les obstacles sont poses sur le ruban (milieu de l'arc en virage), decales et orientes dans le sens de la marche.
+## Les obstacles sont poses sur une partie droite du ruban, a leur position le long de la ligne, et orientes dans le sens
+## de la marche.
 class_name ConstructionPiste
 
 const POINTS_PAR_ARC := 12
@@ -25,6 +26,7 @@ static func construire(g: GenerateurPiste) -> Node3D:
 		var sur_ruban := _point_sur_ruban(g, g.obstacles[n], origine, t)
 		var pos: Vector2 = sur_ruban[0]
 		var tangente: Vector2 = sur_ruban[1]
+		pos += tangente * g.positions_obstacles[n]                         # position le long de la ligne droite
 		pos += Vector2(-tangente.y, tangente.x) * g.decalages_obstacles[n]   # decalage lateral (> 0 = a droite)
 		racine.add_child(_obstacle(pos, g.tailles_obstacles[n], tangente, n))
 		description_obstacles.append([pos.x, pos.y, g.tailles_obstacles[n].x, g.tailles_obstacles[n].z, atan2(tangente.x, tangente.y)])

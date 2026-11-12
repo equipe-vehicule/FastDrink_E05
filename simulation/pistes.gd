@@ -16,6 +16,7 @@ const LISTE := [
 const INDEX_ALEATOIRE := 6
 
 var parametres := ParametresPiste.new()
+var place_avant_obstacle := 0.0   # m, transmis au generateur (voir GenerateurPiste.place_avant_obstacle)
 var generateur: GenerateurPiste   # derniere piste aleatoire (matrice, chemin, graine)
 var index := 0
 var actuelle: Node3D
@@ -35,6 +36,7 @@ func _generer(graine: int) -> Node3D:
 	if graine == 0:
 		graine = parametres.graine if parametres.graine != 0 else randi_range(1, 999999)
 	generateur = GenerateurPiste.new(parametres)
+	generateur.place_avant_obstacle = place_avant_obstacle
 	generateur.generer(graine)
 	print(generateur.en_texte())
 	return ConstructionPiste.construire(generateur)

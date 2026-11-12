@@ -15,6 +15,15 @@ extends Node3D
 ## Frequence de la boucle du programme sur le vrai robot (lecture capteurs -> calcul -> commande).
 ## Entre deux tours, la commande precedente reste appliquee. PROVISOIRE : a mesurer sur le Pi ; 0 = a chaque pas physique.
 @export var frequence_controle_hz := 50.0
+## Demarre le journal CSV des le lancement (essais automatiques, sans appuyer sur L).
+@export var journal_au_demarrage := false
+## Essais : reglages du controleur appliques a chaque depart, ex. {"contournement_fluide": true, "suivi:vitesse_max": 55}.
+@export var reglages_essai: Dictionary = {}
+## Banc d'essai : nombre de pistes aleatoires a enchainer automatiquement (0 = desactive). Resultats : journaux/banc_*.csv
+@export var banc_essai_pistes := 0
+@export var banc_graine_depart := 1
+## Acceleration du temps (essais) : les calculs restent identiques, seul l'affichage va plus vite.
+@export var vitesse_temps := 1.0
 
 var vehicule: Vehicule
 var controleur := Controleur.new()
@@ -27,6 +36,7 @@ var mesure := MesureAcceleration.new()
 var journal := JournalCSV.new()
 var _temps := 0.0
 var _t_controle := 0.0
+var banc := BancEssai.new()
 
 func _ready() -> void:
 	# Par defaut Godot fait au plus 8 pas physiques par image : a 240 pas/s, sous 30 images/s, le temps ralentit
@@ -43,7 +53,16 @@ func _ready() -> void:
 	hud = Hud.new(); add_child(hud)
 	_verifier_coherence()
 	_brancher_signaux()
-	charger_piste(piste_initiale)
+	Engine.time_scale = vitesse_temps
+	if journal_au_demarrage:
+		journal.basculer(null)
+	if banc_essai_pistes > 0:
+		banc.nombre_pistes = banc_essai_pistes
+		banc.graine_depart = banc_graine_depart
+		banc.demarrer()
+		charger_piste(Pistes.INDEX_ALEATOIRE, banc.prochaine_graine())
+	else:
+		charger_piste(piste_initiale)
 
 ## Le controleur (ReglagesRobot) et le modele (Vehicule) doivent decrire le meme robot :
 ## sinon l'odometrie du contournement calcule avec de mauvaises dimensions. On signale chaque ecart.
@@ -83,6 +102,7 @@ func _brancher_signaux() -> void:
 	bille.chute.connect(func(): print("BILLE TOMBEE a t = %.2f s (acceleration max atteinte %.2f m/s2)" % [_temps, mesure.maximum]))
 
 func charger_piste(i: int, graine := 0) -> void:
+	pistes.place_avant_obstacle = _controleur_regle().place_avant_obstacle_mm() / 1000.0
 	pistes.charger(i, graine)
 	journal.nouvelle_piste(pistes.actuelle)   # sans effet si le journal est arrete
 	remettre_au_depart()
@@ -91,10 +111,28 @@ func remettre_au_depart() -> void:
 	vehicule.placer(pistes.transform_depart())
 	vehicule.commander(0, 90)
 	entrees.reinitialiser()
-	controleur = Controleur.new()
+	controleur = _controleur_regle()
+	_regler_mode_piste()
 	_temps = 0.0
 	mesure.reinitialiser()
 	bille.replacer()
+
+## Mode de demonstration selon la piste de test : seuls des reglages changent, pas la logique du robot.
+##   « Arret devant obstacle » : arret a distance predeterminee, sans contournement.
+##   « Recul » : a la fin de la ligne, arret puis recul de 180 mm en suivant la ligne (exigence : moins de 200 mm).
+func _regler_mode_piste() -> void:
+	match Pistes.LISTE[pistes.index][0]:
+		"Arret devant obstacle":
+			controleur.contournement.actif = false
+		"Recul":
+			controleur.recul_fin_ligne_mm = 180.0
+
+## Nouveau controleur avec les reglages de l'essai (reglages_essai).
+func _controleur_regle() -> Controleur:
+	var c := Controleur.new()
+	for chemin in reglages_essai:
+		c.set_indexed(NodePath(chemin), reglages_essai[chemin])
+	return c
 
 func _physics_process(dt: float) -> void:
 	_temps += dt
@@ -106,7 +144,10 @@ func _physics_process(dt: float) -> void:
 		_t_controle = 0.0
 	mesure.ajouter(vehicule.vitesse, dt)
 	bille.mettre_a_jour(dt)   # appele ici (et non dans la bille) pour garder l'ordre : commande -> mesure -> bille
-	journal.ecrire(_temps, vehicule, bille.tombee, controleur)
+	journal.ecrire(_temps, vehicule, bille.tombee, controleur, bille.taux_bord())
+	if banc_essai_pistes > 0 and banc.suivre(_temps, vehicule, bille, controleur, pistes.generateur.obstacles.size()):
+		if not banc.termine:
+			charger_piste(Pistes.INDEX_ALEATOIRE, banc.prochaine_graine())
 
 ## Qui conduit : personne tant que la bille n'est pas prete, sinon le controleur ou le clavier.
 func _conduire(dt: float) -> void:

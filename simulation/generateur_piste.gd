@@ -5,11 +5,12 @@
 ## Contraintes gardees (cahier des charges et physique) :
 ##   - ruban de largeur_ruban, virages de rayon >= rayon_virage (120 mm), pas de croisement de lignes ;
 ##   - les 2 premieres cases sont droites et sans obstacle (la voiture est posee dessus au depart).
-## Tout le reste est libre par defaut (reglable dans ParametresPiste) :
+## Reglable dans ParametresPiste :
 ##   - rayon des virages tire au hasard pour chaque piste entre rayon_virage et rayon_virage_max ;
 ##   - cases voisines autorisees : demi-tours serres, lignes paralleles a une case d'ecart ;
-##   - obstacles n'importe ou sur le ruban, y compris en virage, colles les uns aux autres,
-##     de taille variable et decales par rapport a la ligne.
+##   - obstacles (precisions du professeur) : seulement sur des lignes droites, centres sur la ligne, n'importe ou le
+##     long de la droite, avec la place exigee avant et apres (voir _placer_obstacles).
+## Les virages sont des quarts de cercle (90 deg) : le guide ne donne que le rayon minimal, pas d'angle.
 class_name GenerateurPiste
 extends RefCounted
 
@@ -19,6 +20,9 @@ const ESSAIS_MAX := 20000
 const TAILLE_SOL_UTILE := 7.6     # m : la grille doit tenir sur le sol de 8 m
 
 var p: ParametresPiste
+## Ligne droite que la sequence arret + recul occupe devant un obstacle (m). Fournie par qui cree le generateur
+## (Controleur.place_avant_obstacle_mm) : suit les distances d'arret et de recul de ReglagesEpreuve.
+var place_avant_obstacle := 0.0
 var graine := 0
 var rayon := 0.12                 # rayon des virages de cette piste (m)
 var colonnes := 0                 # taille reelle de la grille (reduite si les cases sont grandes)
@@ -28,6 +32,7 @@ var chemin: Array[Vector2i] = []  # cases dans l'ordre de parcours
 var obstacles: Array[int] = []    # indices dans chemin
 var tailles_obstacles: Array[Vector3] = []   # meme ordre que obstacles
 var decalages_obstacles: Array[float] = []   # m, decalage lateral par rapport a la ligne (> 0 = a droite)
+var positions_obstacles: Array[float] = []   # m, position du centre le long de la ligne, depuis le centre de la case
 
 var _rng := RandomNumberGenerator.new()
 
@@ -130,34 +135,62 @@ func _libre(v: Vector2i, depuis: Vector2i) -> bool:
 	return true
 
 # ---------------------------------------------------------------- obstacles
-## Chaque case possible recoit un obstacle avec la probabilite proba_obstacle.
+## Obstacles seulement sur des troncons de lignes droites, a une position tiree au hasard le long de la droite, avec au
+## moins place_avant_obstacle + marge_droite_avant de ligne droite avant la face et droite_apres_min apres l'arriere (place pour l'arret, le
+## recul et le contournement). Un obstacle peut donc etre juste avant ou juste apres un virage, et plusieurs obstacles
+## peuvent se suivre sur une meme droite. Chaque case droite recoit un obstacle avec la probabilite proba_obstacle.
 func _placer_obstacles() -> void:
 	obstacles.clear()
 	tailles_obstacles.clear()
 	decalages_obstacles.clear()
-	var dernier := -1000
-	for i in range(maxi(p.cases_libres_depart, 2), chemin.size()):
-		if obstacles.size() >= p.nb_obstacles: break
-		if i - dernier < p.ecart_min_obstacles: continue
-		if not p.obstacles_en_virage and not _droite_avec_place(i): continue
-		if _rng.randf() >= p.proba_obstacle: continue
-		obstacles.append(i)
-		dernier = i
-		_marquer(chemin[i], OBSTACLE)
-		var t_min := p.taille_obstacle
-		var t_max := p.taille_obstacle_max
-		tailles_obstacles.append(Vector3(_rng.randf_range(t_min.x, maxf(t_min.x, t_max.x)),
-				_rng.randf_range(t_min.y, maxf(t_min.y, t_max.y)), _rng.randf_range(t_min.z, maxf(t_min.z, t_max.z))))
-		decalages_obstacles.append(_rng.randf_range(-p.decalage_obstacle_max, p.decalage_obstacle_max))
+	positions_obstacles.clear()
+	var t := taille_case()
+	for troncon in _troncons_droits():
+		var debut: int = troncon[0]
+		var longueur: float = (troncon[1] - debut + 1) * t
+		var avant := place_avant_obstacle + p.marge_droite_avant
+		var s_libre := avant                   # premiere position possible de la face (m depuis le debut du troncon)
+		for i in range(debut, troncon[1] + 1):
+			if obstacles.size() >= p.nb_obstacles: return
+			if _rng.randf() >= p.proba_obstacle: continue
+			var taille := _tirer_taille()
+			# Face dans la case i : l'obstacle entier tient dans la case, avec la place exigee avant et apres
+			var s_min := maxf(s_libre, (i - debut) * t)
+			var s_max := minf((i - debut + 1) * t, longueur - p.droite_apres_min) - taille.z
+			if s_max < s_min: continue
+			var s_face := _rng.randf_range(s_min, s_max)
+			obstacles.append(i)
+			tailles_obstacles.append(taille)
+			positions_obstacles.append(s_face + taille.z / 2.0 - ((i - debut) * t + t / 2.0))
+			decalages_obstacles.append(_rng.randf_range(-p.decalage_obstacle_max, p.decalage_obstacle_max))
+			_marquer(chemin[i], OBSTACLE)
+			s_libre = s_face + taille.z + p.droite_apres_min + avant
 
-## Utilise seulement si obstacles_en_virage = false : case i entierement droite, ainsi que
-## cases_droites_avant cases avant et cases_droites_apres cases apres (une case est droite quand la precedente,
-## elle et la suivante sont alignees : sinon elle contient un virage), avec une case de chaque cote dans la grille.
-func _droite_avec_place(i: int) -> bool:
-	if i - 1 - p.cases_droites_avant < 0 or i + 1 + p.cases_droites_apres >= chemin.size(): return false
+func _tirer_taille() -> Vector3:
+	var t_min := p.taille_obstacle
+	var t_max := p.taille_obstacle_max
+	return Vector3(_rng.randf_range(t_min.x, maxf(t_min.x, t_max.x)), _rng.randf_range(t_min.y, maxf(t_min.y, t_max.y)),
+			_rng.randf_range(t_min.z, maxf(t_min.z, t_max.z)))
+
+## Troncons de cases droites consecutives [premiere, derniere], hors des cases du depart et de la case d'arrivee.
+func _troncons_droits() -> Array:
+	var troncons := []
+	var debut := -1
+	for i in range(maxi(p.cases_libres_depart, 2), chemin.size() - 1):
+		if _case_droite(i):
+			if debut < 0: debut = i
+		elif debut >= 0:
+			troncons.append([debut, i - 1])
+			debut = -1
+	if debut >= 0:
+		troncons.append([debut, chemin.size() - 2])
+	return troncons
+
+## Case droite (la precedente, elle et la suivante sont alignees), avec une case de chaque cote dans la grille
+## (le contournement sort de la case).
+func _case_droite(i: int) -> bool:
 	var dir := chemin[i] - chemin[i - 1]
-	for k in range(i - p.cases_droites_avant, i + p.cases_droites_apres + 1):
-		if chemin[k] - chemin[k - 1] != dir or chemin[k + 1] - chemin[k] != dir: return false
+	if chemin[i + 1] - chemin[i] != dir: return false
 	var cote := Vector2i(dir.y, dir.x)
 	return _dans_grille(chemin[i] + cote) and _dans_grille(chemin[i] - cote)
 

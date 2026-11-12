@@ -2,10 +2,8 @@
 ## Modifiables dans l'inspecteur du noeud Simulation, ou enregistres dans des fichiers .tres
 ## (clic droit dans le FileSystem > Nouvelle ressource > ParametresPiste) pour garder plusieurs reglages.
 ##
-## Par defaut, tout ce que le cahier des charges n'interdit pas peut arriver (le but est de trouver
-## les cas ou la voiture echoue avant de passer au vrai robot). Pour un mode "facile" : rayon_virage_max = 0,12,
-## autoriser_cases_voisines = false, obstacles_en_virage = false, ecart_min_obstacles = 5,
-## taille_obstacle_max = taille_obstacle, decalage_obstacle_max = 0.
+## Ruban : tout ce que le cahier des charges n'interdit pas peut arriver (rayon >= 120 mm, virages de 90 deg, enchaines
+## en S ou en demi-tour). Obstacles : conformes aux precisions du professeur (groupe Obstacles).
 class_name ParametresPiste
 extends Resource
 
@@ -32,17 +30,19 @@ extends Resource
 @export var autoriser_cases_voisines := true
 
 @export_group("Obstacles")
-@export_range(0.0, 1.0, 0.01) var proba_obstacle := 0.15 ## probabilite qu'une case du ruban recoive un obstacle
+## Precisions du professeur : obstacles de 100 x 150 x 50 mm, droits et centres sur la ligne, seulement sur des lignes
+## droites (juste avant ou apres un virage possible), toujours avec la place pour l'arret, le recul et le contournement.
+@export_range(0.0, 1.0, 0.01) var proba_obstacle := 0.15 ## probabilite qu'une case droite recoive un obstacle
 @export_range(0, 100) var nb_obstacles := 100 ## maximum par piste
-@export var taille_obstacle := Vector3(0.10, 0.15, 0.10) ## taille minimale : largeur, hauteur, profondeur (m)
-@export var taille_obstacle_max := Vector3(0.20, 0.20, 0.20) ## taille maximale, tiree au hasard pour chaque obstacle
-@export_range(0.0, 0.1, 0.005, "suffix:m") var decalage_obstacle_max := 0.04 ## decalage lateral maximal par rapport a la ligne
-## Ecart minimal entre deux obstacles, en cases. 1 = obstacles possibles sur des cases voisines.
-@export_range(1, 20) var ecart_min_obstacles := 1
+@export var taille_obstacle := Vector3(0.10, 0.15, 0.05) ## largeur, hauteur, profondeur (m) : obstacle reel
+@export var taille_obstacle_max := Vector3(0.10, 0.15, 0.05) ## taille maximale, tiree au hasard (= taille : toujours la meme)
+## Obstacle pose a la main : ecart maximal de son centre a la ligne (ReglagesEpreuve.tolerance_centrage_mm).
+@export_range(0.0, 0.05, 0.005, "suffix:m") var decalage_obstacle_max := 0.01
 @export_range(2, 20) var cases_libres_depart := 2 ## pas d'obstacle sous la voiture au depart
-## true = obstacles n'importe ou, y compris en virage. false = seulement au milieu d'une ligne droite (reglages ci-dessous).
-@export var obstacles_en_virage := true
-## Si obstacles_en_virage = false : cases entierement droites exigees avant et apres l'obstacle.
-## 2 + 2 : tous les contournements reussis en simulation (le contournement a besoin de ~400 mm avant, ~600 mm apres).
-@export_range(0, 6) var cases_droites_avant := 2
-@export_range(0, 6) var cases_droites_apres := 2
+## Ligne droite avant la face de l'obstacle = place de la sequence arret + recul (calculee par le Controleur avec
+## ReglagesEpreuve, voir Controleur.place_avant_obstacle_mm) + cette marge : la voiture qui sort d'un virage doit
+## rouler un peu sur la droite pour s'y aligner. HYPOTHESE : ~1 empattement (138 mm), a confirmer avec le professeur.
+@export_range(0.0, 1.0, 0.01, "suffix:m") var marge_droite_avant := 0.14
+## Ligne droite exigee apres l'arriere de l'obstacle : retour du contournement fluide sur la ligne
+## (arriere de la voiture degage de 135 mm puis retour de 450 mm, ligne revue par les sondes) = ~0,58 m.
+@export_range(0.0, 2.0, 0.01, "suffix:m") var droite_apres_min := 0.60

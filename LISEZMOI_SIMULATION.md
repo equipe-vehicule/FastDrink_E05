@@ -87,3 +87,86 @@ Points à surveiller
 Les sondes sont espacées de 19 mm pour un ruban de 18 mm : si elles sont modélisées comme des points, le ruban peut passer entre deux sondes (lecture 0 0 0 0 0 alors que la voiture est sur la ligne). À observer sur les pistes aléatoires, surtout dans les virages.
 Les gains PID ont été réglés sur les pistes de test ; les pistes aléatoires sinueuses (proba_tout_droit bas) permettront de vérifier qu'ils tiennent.
 La taille réelle des obstacles reste à mesurer (taille_obstacle, et largeur_obstacle_mm / longueur_obstacle_mm dans Contournement).
+
+
+## Modifications du 12 novembre 2026
+
+Voir `SUIVI_SIMULATION.md` pour les mesures, les limites et la suite.
+
+controleur.gd : état RATTRAPAGE (ligne perdue en virage serré : arrêt, marche arrière braquée à l'opposé jusqu'à revoir la ligne, arrêt, reprise) ; arrêt en fin de ligne (BLOQUE) ; recul en fin de ligne (`recul_fin_ligne_mm`) ; état CONTOURNEMENT_FLUIDE avec repli sur le contournement par phases.
+contournement_fluide.gd (nouveau) : changement de voie en S à courbure continue (polynôme de degré 5), suivi par poursuite d'un point (pure pursuit), tracé dans le repère de la ligne, sans arrêt devant l'obstacle.
+suivi_ligne.gd : vitesse maximale 55. Les options d'essai `loi_table` et `ralentir_virage` ont été retirées lors de la restructuration (résultats dans SUIVI_SIMULATION.md).
+contournement.gd : vitesse de manœuvre 40, pause 0,15 s, profondeur d'obstacle 100 mm.
+recul_ligne.gd : délai de grâce avant de voir la ligne (recul lancé après la fin de la ligne).
+simulation.gd : mode par piste (« Arrêt devant obstacle » : sans contournement ; « Recul » : recul de 180 mm en fin de ligne), `journal_au_demarrage`, `reglages_essai`.
+journal_csv.gd : colonne `collision`.
+piste_demo.tres (nouveau) : piste aléatoire conforme au cahier des charges (pas d'épingle ni d'obstacle en virage, obstacles de 200 × 60 mm), graine 884064.
+
+## Corrections du 12 novembre (après le banc d'essai)
+
+- `controleur.gd` : reprise douce après toute manœuvre (1 s, vitesse ≤ 25, braquage ≤ 120 °/s) ; cap de départ du contournement fluide par moindres carrés (`MemoireParcours.direction_ajustee`) ; compteur `raisons_repli` (diagnostic seulement).
+- `contournement_fluide.gd` : `ecart_mm` 210 → 250 (décalage de l'obstacle compté) ; ligne cherchée du côté réel si elle n'est pas revue.
+- `banc_essai.gd` : colonne `raisons_repli`.
+- Résultat sur 40 pistes aléatoires : 0 chute, 0 collision, 0 demi-tour. Détails et justifications : `SUIVI_SIMULATION.md`, section 7.
+
+## Restructuration du code (12 novembre)
+
+`controleur.gd` (759 lignes) a été découpé : il ne contient plus que la machine à états (quel état, quelle transition). Chaque manœuvre est dans son propre fichier, sans dépendance à Godot, pour être portée telle quelle en Python. Le comportement est identique : le banc d'essai (40 pistes) donne exactement les mêmes résultats avant et après.
+
+| Fichier | Rôle |
+| --- | --- |
+| `controleur.gd` | Machine à états : choisit l'algorithme qui commande à chaque pas |
+| `suivi_ligne.gd` | Lecture des 5 sondes, PID, détection de la ligne et de l'arrivée |
+| `arret_obstacle.gd` | Arrêt à distance prédéterminée de l'obstacle |
+| `reglages_epreuve.gd` | Ce qu'impose l'épreuve : distances d'arrêt et de recul, cotes de l'obstacle (un seul endroit à modifier) |
+| `contournement_fluide.gd` | Contournement en S lisse, depuis l'arrêt après le recul |
+| `contournement.gd` | Contournement par phases (ECART, LONGER, RETOUR…), une fonction par phase |
+| `rattrapage.gd` | Virage serré raté : marche arrière ; détection de la fin de ligne |
+| `retrouver_ligne.gd` | Ligne perdue longtemps : aller où elle doit être, puis spirale |
+| `demi_tour.gd` | Pivot d'environ 180° quand la voiture roule à l'envers |
+| `recul_ligne.gd` | Recul en suivant la ligne (< 200 mm) |
+| `reprise_douce.gd` | Vitesse et braquage limités 1 s après une manœuvre (bille) |
+| `memoire_parcours.gd` | Ligne vue, chemin parcouru, obstacles contournés, demi-tours (repère global) |
+| `filtre_ultrason.gd`, `odometrie.gd`, `reglages_robot.gd` | Mesures et dimensions du robot |
+| `banc_essai.gd` | Essais automatiques sur N pistes aléatoires (`journaux/banc_*.csv`) |
+
+Réglages renommés (pour `reglages_essai` dans l'inspecteur du nœud Simulation, ou `controleur.<module>.<réglage>`) :
+
+| Avant | Maintenant |
+| --- | --- |
+| `reprise_douce_s`, `vitesse_reprise`, `braquage_reprise_deg_s` | `reprise:duree_s`, `reprise:vitesse_max`, `reprise:braquage_max_deg_s` |
+| `rattrapage_actif`, `rattrapage_apres_s`, `vitesse_rattrapage`, `rattrapage_max_mm`, `rattrapages_max` | `rattrapage:actif`, `rattrapage:apres_s`, `rattrapage:vitesse`, `rattrapage:distance_max_mm`, `rattrapage:tentatives_max` |
+| `distance_fluide_mm`, `confirmations_fluide`, `distance_fluide_min_mm` | `fluide:distance_declenchement_mm`, `fluide:confirmations`, `fluide:distance_min_mm` |
+| `retrouver_apres_s`, `vitesse_retrouver`… | `retrouver:apres_s`, `retrouver:vitesse`… |
+| `vitesse_demi_tour`, `demi_tour_avant_s`… | `demi_tour:vitesse`, `demi_tour:duree_avant_s`… |
+| `obstacles_memorises`, `rayon_meme_obstacle_mm`… | `memoire:obstacles_memorises`, `memoire:rayon_meme_obstacle_mm`… |
+
+Retiré : `fluide_en_roulant` (variante du contournement fluide avec arrêt, jamais retenue), `loi_table` et `ralentir_virage` (suivi de ligne), et les 3 fichiers `simulation.tscn*.tmp` (temporaires de Godot, maintenant ignorés par `.gitignore`).
+
+## Séquence arrêt → recul → contournement (12 novembre, précisions du professeur)
+
+Devant chaque obstacle, la voiture s'arrête à D_arret, recule de D_recul en suivant la ligne, puis contourne. Les valeurs officielles seront données plus tard : on les change à un seul endroit, `simulation/reglages_epreuve.gd`.
+
+| Réglage (`ReglagesEpreuve`) | Valeur de test | Rôle |
+| --- | --- | --- |
+| `distance_arret_mm` | 100 | Avant de la voiture → face de l'obstacle (guide : ± 30 mm) |
+| `distance_recul_mm` | 150 | Recul en suivant la ligne (guide : < 200 mm, `RECUL_MAX_MM`) |
+| `pause_avant_recul_s`, `pause_avant_contournement_s` | 0,3 | Immobile entre deux mouvements (bille) |
+| `largeur_obstacle_mm`, `hauteur_obstacle_mm`, `profondeur_obstacle_mm` | 100, 150, 50 | Obstacle réel |
+| `tolerance_centrage_mm` | 10 | Obstacle posé à la main : écart possible à la ligne |
+
+Pour essayer d'autres valeurs sans toucher au code : `reglages_essai` du nœud Simulation, par exemple `{"epreuve:distance_arret_mm": 150, "epreuve:distance_recul_mm": 190}`.
+
+Ce qui a changé :
+
+- `controleur.gd` : nouvel état `RECUL_OBSTACLE` (arrêt → pause → recul → pause → contournement). Le contournement part de la position réelle de la voiture par rapport à la ligne, calculée avec la ligne mémorisée (`_pose_par_rapport_a_la_ligne`), même si la voiture s'est arrêtée de travers. `place_avant_obstacle_mm()` donne la ligne droite occupée par l'arrêt et le recul.
+- `contournement_fluide.gd` : `choisir(d, côté, x0, cap0)` choisit le rayon le plus doux qui passe sans toucher l'obstacle (vérification géométrique voiture / obstacle), en partant de la position réelle. Sinon, repli sur le contournement par phases.
+- `recul_ligne.gd` : si la ligne sort des sondes pendant le recul, la voiture finit la distance tout droit (`finir_sans_ligne`).
+- `memoire_parcours.gd` : `derniere_droite()` ajuste une droite sur la dernière partie droite de la ligne vue (sans les points du virage).
+- Pistes aléatoires (`generateur_piste.gd`, `parametres_piste.gd`) : obstacle de 100 × 150 × 50 mm, centré à ± 10 mm, seulement sur les lignes droites, juste avant ou après un virage possible, obstacles enchaînés possibles. Ligne droite avant l'obstacle = `place_avant_obstacle_mm()` (D_arret + 193 mm capteur → essieu + D_recul) + `marge_droite_avant` (140 mm, hypothèse : le temps de s'aligner en sortie de virage). Elle suit donc D_arret et D_recul.
+- Pistes de test `test_01_arret` et `test_04_contournement` : obstacle remis aux vraies cotes (100 × 50 × 150 mm, avant 200 × 60 × 200) dans les .blend, réexportées.
+- `banc_essai.gd` : nouvelles colonnes `arrets`, `erreur_arret_max_mm`, `recul_min_mm`, `recul_max_mm`, `pertes_ligne_apres_contournement`, `perte_ligne_apres_max_s`, `perte_ligne_ailleurs_max_s`, `fluide_fin_sans_ligne`.
+
+Réglages retirés ou déplacés : `arret.distance_arret_cm` → `epreuve:distance_arret_mm` ; `recul.distance_auto_mm`, `recul.attente_auto_s` (retirés) ; `contournement.pause_s`, `largeur_obstacle_min_mm`, `longueur_obstacle_max_mm` → cotes de `ReglagesEpreuve` ; `parametres_piste` : `obstacles_en_virage`, `ecart_min_obstacles`, `cases_droites_avant/apres`, `droite_avant_min` → `marge_droite_avant`.
+
+Résultats (banc d'essai, 40 pistes aléatoires, D_arret 100 / D_recul 150) : 40/40 arrivées, 0 collision, 0 chute de bille, arrêt à 6 mm près au plus, recul de 150 mm à chaque obstacle, 0 perte de ligne après un contournement. Détails : `SUIVI_SIMULATION.md`, section 9.

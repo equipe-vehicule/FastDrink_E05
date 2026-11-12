@@ -15,7 +15,10 @@
 ##   Motif incoherent (sondes non voisines : reflet) : lecture ignoree, on garde la commande precedente.
 ## Sans cette detection, une seule lecture "0 0 0 0 0" erronee declenchait un braquage maximal.
 ##
-## COMMANDE : PID inchange (erreur en mm -> angle servo), vitesse reduite quand on est decentre.
+## COMMANDE : PID (erreur en mm -> angle servo), vitesse reduite quand on est decentre.
+## Essais du 12 nov. (parcours fourni), abandonnes : loi de braquage par table (roues plus calmes mais 2 rattrapages par
+## virage serre au lieu de 1) et ralentissement en entree de virage (aucun rattrapage evite, tour plus lent).
+## Detail dans SUIVI_SIMULATION.md.
 class_name SuiviLigne
 extends RefCounted
 
@@ -28,11 +31,12 @@ const FILTRE_DERIVEE := 0.3       # 0..1 : plus petit = derivee plus lissee
 
 # ----- Gains PID (a regler dans cet ordre : kp, puis kd, puis ki)
 var kp := 1.80                    # degres par mm d'ecart
-var ki := 0.5                     # degres par (mm*s)
+var ki := 0.5                     # degres par (mm*s). Essai a 0 (12 nov.) : plus de pertes de ligne dans les virages serres
 var kd := 0.08                    # degres par (mm/s)
 
 # ----- Vitesses (commande 0..100)
-var vitesse_max := 40             # ligne droite, bien centre
+var vitesse_max := 55             # ligne droite, bien centre. Essais du 12 nov. (parcours fourni) : 40 -> 55,9 s,
+								  # 55 -> 44,4 s sans chute de bille, 70 -> 37,3 s mais la bille tombe
 var vitesse_virage := 15          # grand ecart ou ligne perdue
 
 # ----- Detection
@@ -84,6 +88,11 @@ func reinitialiser() -> void:
 	_t_sans_ligne = 0.0               # sinon RETROUVER repartait juste apres un contournement (journal du 6 novembre)
 	_t_aligne = 0.0
 	_n_cinq = 0
+
+## Derniere position de la ligne vue avant de la perdre (mm, > 0 = a droite). Proche de 0 : la ligne a disparu
+## sous les sondes centrales, donc devant la voiture (fin de la ligne), et non sur le cote (virage).
+func position_avant_perte() -> float:
+	return _erreur
 
 ## Temps (s) depuis lequel aucune sonde ne voit la ligne.
 func temps_sans_ligne() -> float:

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="ParametresPiste" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://simulation/parametres_piste.gd" id="1_param"]
+
+[resource]
+script = ExtResource("1_param")
+graine = 884064
+rayon_virage_max = 0.2
+proba_tout_droit = 0.7
+autoriser_cases_voisines = false
+proba_obstacle = 0.3
+taille_obstacle = Vector3(0.2, 0.2, 0.06)
+taille_obstacle_max = Vector3(0.2, 0.2, 0.06)
+ecart_min_obstacles = 3
+obstacles_en_virage = false

@@ -20,17 +20,6 @@
 ##                ou vite de l'autre cote (ligne qui a tourne : virage oppose au contournement). Dans ce cas, ou si
 ##                elle quitte la barre en quelques cm, le PID reprend la main (+12 points pres des virages en simulation).
 ##   ALIGNEMENT : virage qui finit sur la ligne, dans l'axe -> termine.
-## Un obstacle vu devant pendant LONGER ou RETOUR (obstacle suivant, ou decale) relance ECART, a deux conditions :
-##   - l'echo ne vient pas d'un obstacle deja contourne (memoire de sa zone : en le longeant, le cone de l'ultrason
-##     attrape souvent son coin) ;
-##   - il est confirme par echos_confirmation pas consecutifs sur la mesure brute (un echo isole ne suffit pas).
-## (Journal Godot du 5 novembre : un seul echo a 23 cm sur le coin de l'obstacle longe relancait tout l'ECART.)
-## En cas d'impossibilite (trop loin sur le cote, ligne introuvable), `echec` passe a true : le controleur s'arrete
-## (BLOQUE) au lieu de partir au hasard.
-## Le servo met du temps a braquer : les changements de phase sont anticipes (_retard_mm).
-class_name Contournement
-extends RefCounted
-
 ##   ORBITE     : (remplace RECHERCHE) la ligne n'etait pas la ou prevu. L'obstacle est pose SUR la ligne : la ligne
 ##                part de l'obstacle et s'en eloigne, donc tout cercle centre sur l'obstacle la coupe, quel que soit
 ##                le sens du virage. La voiture tourne autour de l'obstacle (essieu a rayon_orbite_mm du centre) ;
@@ -41,15 +30,28 @@ extends RefCounted
 ##                L'ecart lu vaut ~0 : le PID partait tout droit et sortait de la ligne (journaux Godot : ligne revue
 ##                6 a 8 % du temps ensuite). Braquage maximal du cote qui s'eloigne de l'obstacle : les sondes passent
 ##                la ligne, puis y reviennent apres ~70 deg de rotation, et le PID reprend.
+## Un obstacle vu devant pendant LONGER ou RETOUR (obstacle suivant, ou decale) relance ECART, a deux conditions :
+##   - l'echo ne vient pas d'un obstacle deja contourne (memoire de sa zone : en le longeant, le cone de l'ultrason
+##     attrape souvent son coin) ;
+##   - il est confirme par echos_confirmation pas consecutifs sur la mesure brute (un echo isole ne suffit pas).
+## (Journal Godot du 5 novembre : un seul echo a 23 cm sur le coin de l'obstacle longe relancait tout l'ECART.)
+## En cas d'impossibilite (trop loin sur le cote, ligne introuvable), `echec` passe a true : le controleur s'arrete
+## (BLOQUE) au lieu de partir au hasard.
+## Le servo met du temps a braquer : les changements de phase sont anticipes (_retard_mm).
+## Le Controleur choisit ce contournement quand le contournement fluide n'est pas possible (obstacle vu a moins de
+## ContournementFluide.distance_min_mm, en virage, ou voiture hors de la ligne).
+class_name Contournement
+extends RefCounted
+
 enum Phase { ECART, LONGER, RETOUR, RECHERCHE, CROISEMENT, ALIGNEMENT, ORBITE, SORTIE_ORBITE, TRAVERS }
 
 var actif := true                 # false = on s'arrete devant l'obstacle (test "Arret devant obstacle")
 var cote_par_defaut := 1          # 1 = par la droite, -1 = par la gauche (en ligne droite)
 var cote_interieur_virage := true # en virage, passer par l'interieur (la ligne revient vers la voiture)
 var seuil_virage_deg := 8.0       # braquage moyen (servo, par rapport a 90) au-dessus duquel on est en virage
-var vitesse_manoeuvre := 25
+var vitesse_manoeuvre := 25       # Banc d'essai du 12 nov. : a 40, la bille tombait dans 4 pistes sur 6 (braquage par paliers) ; 25 = valeur d'origine
 var distance_manoeuvre_cm := 30.0 # distance d'arret avant de contourner : a 20 cm, le coin avant touche les obstacles larges en braquant
-var pause_s := 0.3                # immobilisation avant la manoeuvre
+var pause_s := 0.3                # immobilisation avant la manoeuvre (valeur d'origine ; 0,15 faisait tomber la bille)
 var distance_securite_mm := 40.0  # arret d'urgence si un obstacle apparait tout pres pendant la manoeuvre
 var braquage_manoeuvre := 40.0    # degres de servo par rapport a 90 (max 45)
 var cap_evitement_deg := 40.0     # cap pris pour s'ecarter de la ligne
@@ -97,7 +99,7 @@ var rotation_travers_max_deg := 150.0
 var largeur_obstacle_min_mm := 100.0
 ## Dans le sens de la marche : on longe toujours au moins ca. 150 plutot que 200 : detour plus court, la ligne a moins
 ## le temps de tourner (simulation : +13 points pres des virages) ; les obstacles de 200 mm passent encore.
-var longueur_obstacle_max_mm := 150.0
+var longueur_obstacle_max_mm := 100.0   # 12 nov. : obstacle reel de 60 mm de profondeur (obstacle.blend) + marge ; 150 avant
 var largeur_voiture_mm := 141.0   # modele 3D (Vehicule.ENCOMBREMENT)
 var marge_laterale_mm := 40.0
 var marge_longitudinale_mm := 60.0
@@ -222,136 +224,174 @@ func _ligne_a_tourne(somme: float, n: int) -> bool:
 
 ## v_mm_s : vitesse actuelle ; d_mm : distance ultrason filtree (-1 = rien) ; d_brut_mm : derniere mesure brute.
 ## Retourne Vector2(angle servo, vitesse cible). Regarder `termine` et `echec` ensuite.
-func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.0, dt := 0.02) -> Vector2:
+func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.0, _dt := 0.02) -> Vector2:
 	var c := float(cote)
 	var x := c * _odo.x               # decalage lateral, positif du cote du contournement
-	var angle := 90.0
 	var obstacle_devant := false
 	_detecter_ligne_de_face(somme, n)
 	if phase == Phase.LONGER or phase == Phase.RETOUR:
 		obstacle_devant = _nouvel_obstacle_devant(d_mm, d_brut_mm)
 	else:
 		_n_echos = 0
-
+	var angle := 90.0
 	match phase:
 		Phase.ECART:
-			angle = _angle_vers_cap(c * deg_to_rad(cap_evitement_deg))
-			var vu := d_mm >= 0.0 and d_mm < distance_vue_mm
-			if vu:
-				_perdu = false
-				_d_vu = d_mm
-			elif not _perdu:
-				_perdu = true
-				# l'obstacle vient de sortir du cone : son bord est au plus sur le rayon extreme (cap - demi-angle)
-				var cap_c := c * _odo.cap
-				var x_ultrason := x + _robot.longueur_avant_mm * sin(cap_c)
-				var bord := x_ultrason + _d_vu * sin(cap_c - deg_to_rad(_robot.demi_angle_ultrason_deg))
-				_x_requis = maxf(_x_requis, bord + largeur_voiture_mm / 2.0 + marge_laterale_mm)
-			# le redressement ajoute encore R * (1 - cos(cap)) de decalage, plus le trajet pendant que le servo braque
-			var anticipation := _rayon_virage_mm() * (1.0 - cos(_odo.cap)) \
-					+ _retard_mm(90.0 - c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
-			if _perdu and x >= _x_requis - anticipation:
-				phase = Phase.LONGER
-			elif x > decalage_max_mm:
-				echec = true
-
+			angle = _phase_ecart(c, x, d_mm, v_mm_s)
 		Phase.LONGER:
-			var corr := clampf((_x_requis - x) * gain_lateral,
-					-deg_to_rad(correction_laterale_max_deg), deg_to_rad(correction_laterale_max_deg))
-			angle = _angle_vers_cap(c * corr)
-			if hors_ligne and n > 0 and not _ligne_entrante(somme / n):
-				_reprise_par_pid(somme / n)         # pas la ligne deja parcourue : la voiture repartirait en arriere
-			elif hors_ligne and _odo.y >= _y_fin:
-				_e_reprise = c * SuiviLigne.ERREUR_MAX_MM
-				termine = true
-			elif n > 0 and (_ligne_dans_couloir(somme / n) or _ligne_en_travers(somme / n)):
-				_reprise_par_pid(somme / n)        # pres d'un virage, la ligne revient sous la voiture
-			elif obstacle_devant:
-				_relancer_ecart(d_mm)
-			elif _odo.y >= _y_fin:
-				phase = Phase.RETOUR
-
+			angle = _phase_longer(c, x, somme, n, d_mm, obstacle_devant)
 		Phase.RETOUR:
-			angle = _angle_vers_cap(-c * deg_to_rad(cap_retour_deg))
-			if n > 0:
-				_reperer_ligne(somme / n)
-				phase = Phase.CROISEMENT
-			elif obstacle_devant:
-				_relancer_ecart(d_mm)
-			elif x < -depassement_max_mm:
-				_cap_debut_recherche = _odo.cap
-				if recherche_en_orbite:
-					_phi_debut = _angle_autour(Vector2(_odo.x, _odo.y))
-					_phi_prec = _phi_debut
-					_arc = 0.0
-					_rayon_orbite = rayon_orbite_mm
-					_n_orbite = 0
-					phase = Phase.ORBITE
-				else:
-					phase = Phase.RECHERCHE
-
+			angle = _phase_retour(c, x, somme, n, d_mm, obstacle_devant)
 		Phase.ORBITE:
-			var p := Vector2(_odo.x, _odo.y)
-			var phi := _angle_autour(p)
-			var r := p.distance_to(_centre)
-			# en contournant par la droite, on tourne autour de l'obstacle dans le sens trigonometrique
-			var cap_tangent := -phi if cote > 0 else PI - phi
-			var corr := clampf(gain_rayon_orbite * (r - _rayon_orbite), -deg_to_rad(correction_orbite_max_deg), deg_to_rad(correction_orbite_max_deg))
-			var servo := _robot.roues_vers_servo(rad_to_deg(wrapf(cap_tangent - c * corr - _odo.cap, -PI, PI)) * gain_cap)
-			angle = 90.0 + clampf(servo, -braquage_manoeuvre, braquage_manoeuvre)
-			_arc += absf(wrapf(phi - _phi_prec, -PI, PI))   # angle cumule : peut depasser 180 deg
-			_phi_prec = phi
-			if n > 0 and not _ligne_entrante(somme / n):
-				_e_vu = somme / n
-				phase = Phase.SORTIE_ORBITE
-			elif n == 0 and _arc > deg_to_rad(arc_orbite_max_deg):
-				if _n_orbite == 0:
-					_n_orbite = 1                        # on ne se decourage pas : 2e orbite, plus large
-					_rayon_orbite += rayon_orbite_plus_mm
-					_arc = 0.0
-				else:
-					echec = true
-
+			angle = _phase_orbite(c, somme, n)
 		Phase.SORTIE_ORBITE:
-			# tourne vers l'exterieur jusqu'a pointer a l'oppose de l'obstacle, puis le PID suit la ligne dans ce sens
-			var p := Vector2(_odo.x, _odo.y)
-			var cap_sortie := atan2(p.x - _centre.x, p.y - _centre.y)
-			if n > 0:
-				_e_vu = somme / n
-			if absf(wrapf(cap_sortie - _odo.cap, -PI, PI)) < deg_to_rad(sortie_orbite_tolerance_deg):
-				_reprise_par_pid(_e_vu)
-			else:
-				angle = 90.0 + c * braquage_manoeuvre
-
+			angle = _phase_sortie_orbite(c, somme, n)
 		Phase.RECHERCHE:
-			# la ligne a tourne : on tourne serre vers le cote d'ou l'on vient
-			angle = 90.0 - c * braquage_manoeuvre
-			if n > 0:
-				_reprise_par_pid(somme / n)
-			elif absf(_odo.cap - _cap_debut_recherche) > deg_to_rad(recherche_max_deg):
-				echec = true
-
+			angle = _phase_recherche(c, somme, n)
 		Phase.TRAVERS:
-			angle = 90.0 + _cote_travers * braquage_manoeuvre
-			var rotation_faite := absf(wrapf(_odo.cap - _cap_travers, -PI, PI))
-			if (rotation_faite >= deg_to_rad(rotation_travers_min_deg) and n > 0 and n <= 2) 					or rotation_faite >= deg_to_rad(rotation_travers_max_deg):
-				_reprise_par_pid(somme / n if n > 0 else _cote_travers * SuiviLigne.ERREUR_MAX_MM)
-
+			angle = _phase_travers(somme, n)
 		Phase.CROISEMENT:
-			if _ligne_a_tourne(somme, n):
-				_reprise_par_pid(_e_vu)
-				return Vector2(90.0, float(vitesse_manoeuvre))
-			# tout droit : le virage d'alignement decale encore l'essieu de R * (1 - cos(cap)) vers la ligne
-			var avance_braquage := _retard_mm(90.0 + c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
-			if c * (_odo.x - _x_ligne) <= _rayon_virage_mm() * (1.0 - cos(_odo.cap)) + avance_braquage:
-				phase = Phase.ALIGNEMENT
-
+			angle = _phase_croisement(c, somme, n, v_mm_s)
 		Phase.ALIGNEMENT:
-			# braquage constant : on finit dans l'axe, l'essieu arriere sur la ligne
-			angle = 90.0 + c * braquage_manoeuvre
-			if c * _odo.cap + _inertie_cap(v_mm_s) >= -deg_to_rad(3.0):
-				termine = true
+			angle = _phase_alignement(c, v_mm_s)
 	return Vector2(angle, float(vitesse_manoeuvre))
+
+
+# ----- Phases (chacune retourne l'angle servo et change `phase`, `termine` ou `echec` si besoin)
+
+func _phase_ecart(c: float, x: float, d_mm: float, v_mm_s: float) -> float:
+	var angle := _angle_vers_cap(c * deg_to_rad(cap_evitement_deg))
+	var vu := d_mm >= 0.0 and d_mm < distance_vue_mm
+	if vu:
+		_perdu = false
+		_d_vu = d_mm
+	elif not _perdu:
+		_perdu = true
+		# l'obstacle vient de sortir du cone : son bord est au plus sur le rayon extreme (cap - demi-angle)
+		var cap_c := c * _odo.cap
+		var x_ultrason := x + _robot.longueur_avant_mm * sin(cap_c)
+		var bord := x_ultrason + _d_vu * sin(cap_c - deg_to_rad(_robot.demi_angle_ultrason_deg))
+		_x_requis = maxf(_x_requis, bord + largeur_voiture_mm / 2.0 + marge_laterale_mm)
+	# le redressement ajoute encore R * (1 - cos(cap)) de decalage, plus le trajet pendant que le servo braque
+	var anticipation := _rayon_virage_mm() * (1.0 - cos(_odo.cap)) \
+			+ _retard_mm(90.0 - c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
+	if _perdu and x >= _x_requis - anticipation:
+		phase = Phase.LONGER
+	elif x > decalage_max_mm:
+		echec = true
+	return angle
+
+
+func _phase_longer(c: float, x: float, somme: float, n: int, d_mm: float, obstacle_devant: bool) -> float:
+	var corr := clampf((_x_requis - x) * gain_lateral,
+			-deg_to_rad(correction_laterale_max_deg), deg_to_rad(correction_laterale_max_deg))
+	var angle := _angle_vers_cap(c * corr)
+	if hors_ligne and n > 0 and not _ligne_entrante(somme / n):
+		_reprise_par_pid(somme / n)         # pas la ligne deja parcourue : la voiture repartirait en arriere
+	elif hors_ligne and _odo.y >= _y_fin:
+		_e_reprise = c * SuiviLigne.ERREUR_MAX_MM
+		termine = true
+	elif n > 0 and (_ligne_dans_couloir(somme / n) or _ligne_en_travers(somme / n)):
+		_reprise_par_pid(somme / n)         # pres d'un virage, la ligne revient sous la voiture
+	elif obstacle_devant:
+		_relancer_ecart(d_mm)
+	elif _odo.y >= _y_fin:
+		phase = Phase.RETOUR
+	return angle
+
+
+func _phase_retour(c: float, x: float, somme: float, n: int, d_mm: float, obstacle_devant: bool) -> float:
+	var angle := _angle_vers_cap(-c * deg_to_rad(cap_retour_deg))
+	if n > 0:
+		_reperer_ligne(somme / n)
+		phase = Phase.CROISEMENT
+	elif obstacle_devant:
+		_relancer_ecart(d_mm)
+	elif x < -depassement_max_mm:
+		_cap_debut_recherche = _odo.cap
+		if recherche_en_orbite:
+			_phi_debut = _angle_autour(Vector2(_odo.x, _odo.y))
+			_phi_prec = _phi_debut
+			_arc = 0.0
+			_rayon_orbite = rayon_orbite_mm
+			_n_orbite = 0
+			phase = Phase.ORBITE
+		else:
+			phase = Phase.RECHERCHE
+	return angle
+
+
+func _phase_orbite(c: float, somme: float, n: int) -> float:
+	var p := Vector2(_odo.x, _odo.y)
+	var phi := _angle_autour(p)
+	var r := p.distance_to(_centre)
+	# en contournant par la droite, on tourne autour de l'obstacle dans le sens trigonometrique
+	var cap_tangent := -phi if cote > 0 else PI - phi
+	var corr := clampf(gain_rayon_orbite * (r - _rayon_orbite), -deg_to_rad(correction_orbite_max_deg), deg_to_rad(correction_orbite_max_deg))
+	var servo := _robot.roues_vers_servo(rad_to_deg(wrapf(cap_tangent - c * corr - _odo.cap, -PI, PI)) * gain_cap)
+	var angle := 90.0 + clampf(servo, -braquage_manoeuvre, braquage_manoeuvre)
+	_arc += absf(wrapf(phi - _phi_prec, -PI, PI))   # angle cumule : peut depasser 180 deg
+	_phi_prec = phi
+	if n > 0 and not _ligne_entrante(somme / n):
+		_e_vu = somme / n
+		phase = Phase.SORTIE_ORBITE
+	elif n == 0 and _arc > deg_to_rad(arc_orbite_max_deg):
+		if _n_orbite == 0:
+			_n_orbite = 1                   # on ne se decourage pas : 2e orbite, plus large
+			_rayon_orbite += rayon_orbite_plus_mm
+			_arc = 0.0
+		else:
+			echec = true
+	return angle
+
+
+## Tourne vers l'exterieur jusqu'a pointer a l'oppose de l'obstacle, puis le PID suit la ligne dans ce sens.
+func _phase_sortie_orbite(c: float, somme: float, n: int) -> float:
+	var p := Vector2(_odo.x, _odo.y)
+	var cap_sortie := atan2(p.x - _centre.x, p.y - _centre.y)
+	if n > 0:
+		_e_vu = somme / n
+	if absf(wrapf(cap_sortie - _odo.cap, -PI, PI)) < deg_to_rad(sortie_orbite_tolerance_deg):
+		_reprise_par_pid(_e_vu)
+		return 90.0
+	return 90.0 + c * braquage_manoeuvre
+
+
+## La ligne a tourne : on tourne serre vers le cote d'ou l'on vient.
+func _phase_recherche(c: float, somme: float, n: int) -> float:
+	if n > 0:
+		_reprise_par_pid(somme / n)
+	elif absf(_odo.cap - _cap_debut_recherche) > deg_to_rad(recherche_max_deg):
+		echec = true
+	return 90.0 - c * braquage_manoeuvre
+
+
+func _phase_travers(somme: float, n: int) -> float:
+	var rotation_faite := absf(wrapf(_odo.cap - _cap_travers, -PI, PI))
+	if (rotation_faite >= deg_to_rad(rotation_travers_min_deg) and n > 0 and n <= 2) \
+			or rotation_faite >= deg_to_rad(rotation_travers_max_deg):
+		_reprise_par_pid(somme / n if n > 0 else _cote_travers * SuiviLigne.ERREUR_MAX_MM)
+	return 90.0 + _cote_travers * braquage_manoeuvre
+
+
+func _phase_croisement(c: float, somme: float, n: int, v_mm_s: float) -> float:
+	if _ligne_a_tourne(somme, n):
+		_reprise_par_pid(_e_vu)
+		return 90.0
+	# tout droit : le virage d'alignement decale encore l'essieu de R * (1 - cos(cap)) vers la ligne
+	var avance_braquage := _retard_mm(90.0 + c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
+	if c * (_odo.x - _x_ligne) <= _rayon_virage_mm() * (1.0 - cos(_odo.cap)) + avance_braquage:
+		phase = Phase.ALIGNEMENT
+	return 90.0
+
+
+## Braquage constant : on finit dans l'axe, l'essieu arriere sur la ligne.
+func _phase_alignement(c: float, v_mm_s: float) -> float:
+	if c * _odo.cap + _inertie_cap(v_mm_s) >= -deg_to_rad(3.0):
+		termine = true
+	return 90.0 + c * braquage_manoeuvre
+
+
+# ----- Outils
 
 ## Passe en TRAVERS si la ligne de sortie est coupee de face. Cote du virage : celui qui s'eloigne de l'obstacle.
 func _detecter_ligne_de_face(somme: float, n: int) -> void:

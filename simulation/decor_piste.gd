@@ -46,8 +46,8 @@ static func densifier(ligne: PackedVector2Array, pas: float) -> PackedVector2Arr
 	res.append(ligne[ligne.size() - 1])
 	return res
 
-## Jusqu'a `nombre` positions tirees au hasard dans [mini, maxi], a plus de `marge` de tous les points interdits.
-static func positions_libres(rng: RandomNumberGenerator, mini: Vector2, maxi: Vector2, nombre: int,
+## Jusqu'a `nombre` positions tirees au hasard dans [coin_min, coin_max], a plus de `marge` de tous les points interdits.
+static func positions_libres(rng: RandomNumberGenerator, coin_min: Vector2, coin_max: Vector2, nombre: int,
 		interdits: PackedVector2Array, marge: float) -> Array[Vector2]:
 	var grille := {}                                  # case de cote `marge` -> points interdits qu'elle contient
 	for p in interdits:
@@ -57,7 +57,7 @@ static func positions_libres(rng: RandomNumberGenerator, mini: Vector2, maxi: Ve
 	var res: Array[Vector2] = []
 	for _essai in nombre * 6:
 		if res.size() >= nombre: break
-		var c := Vector2(rng.randf_range(mini.x, maxi.x), rng.randf_range(mini.y, maxi.y))
+		var c := Vector2(rng.randf_range(coin_min.x, coin_max.x), rng.randf_range(coin_min.y, coin_max.y))
 		var k := Vector2i((c / marge).floor())
 		var libre := true
 		for dx in range(-1, 2):

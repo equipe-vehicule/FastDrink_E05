@@ -10,7 +10,7 @@ extends RefCounted
 const DOSSIER := "res://journaux"
 const ENTETE := ["t_s", "commande_vitesse", "servo", "vitesse_m_s", "acceleration_m_s2", "sondes", "ultrason_cm", "bille_tombee",
 		"etat", "phase", "cote", "braquage_moyen", "ultrason_filtre_mm", "odo_x_mm", "odo_y_mm", "odo_cap_deg",
-		"monde_x_m", "monde_z_m", "monde_cap_deg", "piste"]
+		"monde_x_m", "monde_z_m", "monde_cap_deg", "piste", "collision", "bille_bord"]
 
 var _fichier: FileAccess
 var _horodatage := ""
@@ -41,7 +41,8 @@ func nouvelle_piste(piste: Node3D) -> void:
 		var suffixe := "" if _n_piste == 1 else "_%d" % _n_piste
 		_enregistrer_piste("%s/piste_%s%s.csv" % [DOSSIER, _horodatage, suffixe], piste)
 
-func ecrire(temps: float, v: Vehicule, bille_tombee: bool, c: Controleur) -> void:
+## bille_bord : position de la bille rapportee au bord de la cuvette (0 = centre, 1 = chute).
+func ecrire(temps: float, v: Vehicule, bille_tombee: bool, c: Controleur, bille_bord := 0.0) -> void:
 	if _fichier == null: return
 	var avant := -v.global_transform.basis.z
 	_fichier.store_csv_line(PackedStringArray([
@@ -65,6 +66,8 @@ func ecrire(temps: float, v: Vehicule, bille_tombee: bool, c: Controleur) -> voi
 		str(snapped(v.global_position.z, 0.0001)),
 		str(snapped(rad_to_deg(atan2(avant.x, -avant.z)), 0.1)),   # 0 = vers -Z, > 0 = vers la droite (+X)
 		str(_n_piste),
+		str(int(v.en_collision)),
+		str(snapped(bille_bord, 0.001)),
 	]))
 
 # Lignes "ligne;x;z" (axe du ruban, m) puis "obstacle;x;z;largeur;profondeur;angle" (m, rad).

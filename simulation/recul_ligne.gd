@@ -34,10 +34,11 @@ func _init(robot: ReglagesRobot, odo: Odometrie, suivi: SuiviLigne) -> void:
 	_suivi = suivi
 
 ## La voiture doit etre sur la ligne et a peu pres dans son axe : ce cap sert de reference (cap = 0).
-func demarrer(distance_mm: float) -> void:
+## attente_ligne_s : duree toleree sans ligne au debut (recul lance apres la fin de la ligne, sondes au-dela du ruban).
+func demarrer(distance_mm: float, attente_ligne_s := 0.0) -> void:
 	_distance_mm = clampf(distance_mm, 0.0, RECUL_MAX_MM)
 	_odo.reinitialiser()
-	_t_ligne_perdue = 0.0
+	_t_ligne_perdue = -attente_ligne_s
 	fin = Fin.EN_COURS
 
 ## Retourne Vector2(angle servo, vitesse cible). Regarder `fin` ensuite.

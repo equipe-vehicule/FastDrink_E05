@@ -1,114 +1,89 @@
-## ALGORITHMES DU VEHICULE : suivi de ligne PID + arret devant obstacle + contournement.
+## CONTROLEUR DU VEHICULE : a chaque pas, choisit quel algorithme commande la voiture (machine a etats).
 ## Entrees  : sondes (5 valeurs 0/1, de gauche a droite), distance_cm (ultrason, -1 si rien), dt (s)
 ## Sorties  : {"vitesse": -100..100, "angle": 45..135}
-## Ces fichiers ne dependent pas de Godot : la meme logique peut tourner sur le vrai robot.
+## Aucune dependance a Godot (RefCounted) : la meme logique se porte telle quelle en Python sur le robot.
 ##
-## Exigences :
-##   - Arreter a une distance predeterminee d'un obstacle (precision +/- 30 mm).   -> ArretObstacle
-##   - Contourner des obstacles en quittant la ligne-guide au sol.                 -> Contournement
-##   - Suivre la ligne-guide en reculant sur de courtes distances (< 200 mm).      -> ReculLigne
-##   Suivi de ligne : SuiviLigne. Mesures : FiltreUltrason, Odometrie. Robot : ReglagesRobot.
+## Exigences du client et modules qui y repondent :
+##   - suivre la ligne-guide (ruban de 18 mm, courbes de 120 mm et plus)  -> SuiviLigne, Rattrapage
+##   - s'arreter a une distance predeterminee d'un obstacle (+/- 30 mm)   -> ArretObstacle
+##   - contourner des obstacles en quittant la ligne                      -> ContournementFluide, Contournement
+##   - suivre la ligne en reculant sur moins de 200 mm                    -> ReculLigne
+## Outils : FiltreUltrason, Odometrie, MemoireParcours, RepriseDouce. Dimensions du robot : ReglagesRobot.
 ##
-## Machine a etats (ce fichier ne fait que choisir qui commande la voiture) :
-##   SUIVI         : suit la ligne ; un obstacle sur le chemin fait freiner et s'arreter a distance_manoeuvre_cm.
-##   DECISION      : immobile pause_s ; choisit le cote (interieur du virage en cours, sinon cote_par_defaut).
-##   CONTOURNEMENT : Contournement commande (ECART, LONGER, RETOUR, RECHERCHE, CROISEMENT, ALIGNEMENT) -> SUIVI.
-##   BLOQUE        : arret de securite (manoeuvre impossible, phase trop longue) ; repart si la ligne est revue.
-##   DEMI_TOUR     : la voiture roule a l'envers sur la ligne (voir ci-dessous) : elle pivote d'environ 180 deg
-##                   (avant braquage maximal, arriere braquage oppose, plusieurs fois) puis reprend le suivi.
-##   RECUL_LIGNE / ARRET : recul en suivant la ligne, puis arret.
+## Etats :
+##   SUIVI                : SuiviLigne commande. Obstacle sur le chemin : contournement fluide s'il est vu assez loin en
+##                          ligne droite, sinon arret a Contournement.distance_manoeuvre_cm puis DECISION.
+##   DECISION             : immobile Contournement.pause_s, puis contournement par phases, evitement hors ligne, ou
+##                          demi-tour (obstacle deja contourne, vu de dos : la voiture roule a l'envers).
+##   CONTOURNEMENT        : Contournement (par phases) commande -> SUIVI ou RETROUVER.
+##   CONTOURNEMENT_FLUIDE : ContournementFluide commande (trajectoire lisse, sans arret) -> SUIVI.
+##   RATTRAPAGE           : ligne perdue dans un virage serre : marche arriere (Rattrapage) -> SUIVI.
+##   RETROUVER            : ligne perdue depuis longtemps : va ou elle doit etre, puis spirale (RetrouverLigne).
+##   DEMI_TOUR            : pivot d'environ 180 deg (DemiTour) -> SUIVI ou RETROUVER.
+##   RECUL_LIGNE / ARRET  : recul en suivant la ligne (ReculLigne), puis arret.
+##   BLOQUE               : arret de securite ; repart si la ligne est revue.
+##   ARRIVEE              : barre d'arrivee franchie (5 sondes en travers) : arret definitif.
+## Apres toute manoeuvre, RepriseDouce limite vitesse et braquage pendant 1 s (sinon la bille tombe).
 ##
 ## Sens de marche : apres un contournement pres d'une epingle, la ligne retrouvee peut partir dans l'autre sens et le
-## PID la suit a l'envers (journal Godot du 6 novembre : 8 reprises sur 20). La piste ne se croisant jamais, une
-## voiture qui roule a l'envers finit toujours devant un obstacle qu'elle a deja contourne, vu de dos. On memorise
-## donc la position de chaque obstacle contourne (odometrie globale) : s'arreter devant l'un d'eux = demi-tour.
-##
-## Hors de la ligne (suivi avec ligne perdue, RETROUVER, ORBITE, RECHERCHE) : un obstacle devant est evite lui aussi,
-## sans supposer que la ligne passe dessous (Contournement.demarrer_hors_ligne), puis RETROUVER ramene vers la ligne.
-##
-## En suivi, si la ligne sous les sondes est un morceau deja parcouru (4 derniers metres) remonte en sens inverse sur
-## contresens_max_mm : demi-tour, quelle que soit la raison pour laquelle la voiture s'est retournee.
-##
-## Detection : en virage, l'ultrason vise tout droit, hors de la piste. Un echo plus loin que la distance ou
-## la ligne sort du cone du capteur vient d'un objet qui n'est pas sur le chemin : il est ignore (_portee_utile_mm).
+## PID la suivre a l'envers (journal Godot du 6 novembre : 8 reprises sur 20). MemoireParcours garde le chemin parcouru
+## et les obstacles contournes : remonter le chemin sur contresens_max_mm, ou retrouver devant soi un obstacle deja
+## contourne, declenche un demi-tour.
+## Detection en virage : l'ultrason vise tout droit, hors de la piste ; un echo au-dela de la distance ou la ligne sort
+## du cone vient d'un objet qui n'est pas sur le chemin : il est ignore (_portee_utile_mm).
 class_name Controleur
 extends RefCounted
 
-## ARRIVEE : la voiture a franchi la barre d'arrivee (5 sondes en travers, voir SuiviLigne) : arret definitif.
-## RETROUVER : ligne perdue en suivi depuis retrouver_apres_s (virage rate apres un contournement...) : au lieu de
-##   s'arreter, la voiture va, toujours en avancant, devant le dernier point de ligne vu (dans le sens de marche), puis cherche en
-##   spirale jusqu'a croiser la ligne. Si elle la reprend a contresens, demi-tour. (Journal Godot du 6 novembre, 19 h 17 :
-##   la voiture tournait en rond 8 s puis s'arretait seule.)
-enum Etat { SUIVI, DECISION, BLOQUE, ARRET, CONTOURNEMENT, RECUL_LIGNE, DEMI_TOUR, ARRIVEE, RETROUVER }
+enum Etat { SUIVI, DECISION, BLOQUE, ARRET, CONTOURNEMENT, RECUL_LIGNE, DEMI_TOUR, ARRIVEE, RETROUVER, RATTRAPAGE, CONTOURNEMENT_FLUIDE }
 
-const TIMEOUT_ETAT_S := 10.0      # securite : une phase de manoeuvre ne dure jamais plus longtemps
-const LISSAGE_BRAQUAGE_S := 0.5   # constante de temps du braquage moyen (detection et choix du cote)
+## Etats apres lesquels le suivi reprend en douceur (RepriseDouce).
+const ETATS_MANOEUVRE := [Etat.CONTOURNEMENT, Etat.CONTOURNEMENT_FLUIDE, Etat.RATTRAPAGE, Etat.DEMI_TOUR, Etat.RETROUVER]
+const TIMEOUT_ETAT_S := 10.0         # securite : une phase de manoeuvre ne dure jamais plus longtemps
+const LISSAGE_BRAQUAGE_S := 0.5      # constante de temps du braquage moyen (detection en virage, choix du cote)
 
-# ----- Sens de marche et demi-tour
-var rayon_meme_obstacle_mm := 200.0  # echo a moins de ca d'un obstacle deja contourne = c'est lui, vu de dos
-var obstacles_memorises := 8         # derniers obstacles contournes gardes en memoire
-var demi_tour_avant_s := 1.0         # duree de chaque marche avant (braquage maximal)
-var demi_tour_arriere_s := 1.0       # duree de chaque marche arriere (braquage oppose)
-var vitesse_demi_tour := 18
-var demi_tour_max_s := 20.0
-
-# ----- Ligne perdue en suivi : retour vers le dernier point vu
-var retrouver_apres_s := 9.0         # pas moins : en virage serre, la voiture retrouve la ligne seule en tournant (a 4 s, elle bouclait)
-var retrouver_max_s := 90.0          # ensuite BLOQUE
-var approche_max_s := 15.0           # ensuite, ou une fois la cible atteinte : recherche en spirale
-var avance_cible_mm := 200.0         # la cible est devant le dernier point vu, dans le sens de marche : jamais en arriere
-var rayon_cible_mm := 80.0           # cible consideree comme atteinte
-var spirale_s := 8.0                 # plus grand = la spirale s'ouvre plus lentement
-var rayon_meme_ligne_mm := 100.0     # ligne vue a moins de ca du chemin deja suivi : c'est la ligne entrante
-var vitesse_retrouver := 18
-var gain_retrouver := 2.0            # degres de roue par degre d'ecart de direction
-
-# ----- Obstacle vu alors que la voiture n'est pas sur la ligne
+# ----- Reglages propres au controleur
+var contournement_fluide := true     # false : toujours le contournement par phases
+var recul_fin_ligne_mm := 0.0        # piste Recul : > 0 = a la fin de la ligne, s'arreter puis reculer de ca
 var hors_ligne_apres_s := 0.5        # ligne perdue depuis ca : la voiture n'est plus sur la ligne
 var portee_hors_ligne_mm := 500.0    # hors ligne, tout echo plus proche que ca est sur son chemin
 var echos_hors_ligne := 4            # pas consecutifs avec echo brut avant d'interrompre une orbite ou une recherche
-var rayon_obstacle_recent_mm := 400.0  # si pres de l'obstacle evite, jamais de marche arriere (pas de capteur derriere)
+var contresens_max_mm := 70.0        # distance parcourue a contresens sur la ligne avant le demi-tour
 
-# ----- Modules (leurs reglages s'ecrivent par ex. controleur.suivi.kp = 2.0)
+# ----- Modules (leurs reglages s'ecrivent par ex. controleur.suivi.kp = 2.0, controleur.reprise.duree_s = 1.0)
 var robot := ReglagesRobot.new()
 var odo := Odometrie.new(robot)
 var suivi := SuiviLigne.new()
 var ultrason := FiltreUltrason.new()
 var arret := ArretObstacle.new(robot)
 var contournement := Contournement.new(robot, odo)
+var fluide := ContournementFluide.new(robot, odo)
 var recul := ReculLigne.new(robot, odo, suivi)
+var rattrapage := Rattrapage.new(odo, suivi)
+var retrouver := RetrouverLigne.new(robot, odo)
+var demi_tour := DemiTour.new()
+var reprise := RepriseDouce.new()
+var memoire := MemoireParcours.new(robot, odo)
+
+# ----- Journal et diagnostic
+var distance_filtree_mm := -1.0      # derniere distance ultrason apres filtrage
+## Banc d'essai : pourquoi le contournement par phases a ete choisi plutot que le fluide (nombre de fois par raison).
+## N'influence pas la conduite.
+var raisons_repli := {}
 
 var _etat := Etat.SUIVI
 var _t_etat := 0.0
 var _t_arret := 0.0
-var _cmd := 0.0
-var _braquage_moyen := 0.0        # servo - 90, moyenne glissante pendant le suivi (> 0 = virage a droite)
-var distance_filtree_mm := -1.0   # derniere distance ultrason apres filtrage (journal)
-var _obstacles_contournes: Array[Vector2] = []   # centres des obstacles contournes, repere global (mm)
-var _memoire_ligne: Array[Vector2] = []          # points de la ligne vus par les sondes, dernier metre (repere global)
-const PAS_MEMOIRE_MM := 20.0
-const POINTS_MEMOIRE := 50                       # 50 x 20 mm = 1 m de ligne entrante
-var _cap_debut_demi_tour := 0.0
-var _cote_demi_tour := 1
-var _cible_retrouver := Vector2.ZERO
+var _cmd := 0.0                      # commande de vitesse actuelle (apres rampe)
+var _braquage_moyen := 0.0           # servo - 90, moyenne glissante pendant le suivi (> 0 = virage a droite)
 var _evitement_hors_ligne := false   # la prochaine DECISION lance un evitement hors ligne
-var _obstacle_recent := Vector2(INF, INF)   # dernier obstacle evite hors ligne (repere global)
 var _n_echos_hors_ligne := 0
-var _t_spirale := -1.0               # < 0 : la voiture va encore vers la cible
-var _cote_spirale := 1
-# Surveillance du sens de marche : chemin deja parcouru sur la ligne (repere global), un point tous les PAS_MEMOIRE_MM
-const POINTS_CHEMIN := 200                       # 4 m
-const POINTS_CHEMIN_RECENTS := 15                # les derniers points (300 mm) ne comptent pas : la voiture vient d'y passer
-var rayon_chemin_mm := 40.0                      # ligne vue a moins de ca d'un point deja parcouru
-var contresens_max_mm := 70.0                    # distance parcourue a contresens avant le demi-tour
-var _chemin: Array[Vector2] = []
+var _n_echos_fluide := 0
+var _raison_repli := ""
 var _contresens_mm := 0.0
-const DEMI_TOURS_MEMORISES := 6
-var rayon_meme_demi_tour_mm := 300.0
-var demi_tours_max_au_meme_endroit := 2          # ensuite on continue : tourner sur place ne resoudrait rien
-var _demi_tours: Array[Vector2] = []
-var _points_passage := 0                         # points ajoutes a _chemin depuis la derniere reprise du suivi
 
+
+# =====================================================================================================================
+# Pas de controle
 
 func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	dt = maxf(dt, 0.001)
@@ -117,112 +92,80 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	var n := int(ligne.y)
 	var d_mm := ultrason.filtrer(distance_cm, dt)
 	distance_filtree_mm = d_mm
+	_verifier_duree_manoeuvre()
+	var r := _commande_selon_etat(sondes, somme, n, d_mm, distance_cm, dt)
+	return _appliquer(r.x, r.y, somme, n, d_mm, dt)
 
+
+## Securite : une phase de manoeuvre trop longue (odometrie perdue...) -> recherche de la ligne ou arret.
+func _verifier_duree_manoeuvre() -> void:
 	if _etat == Etat.CONTOURNEMENT and contournement.phase in [Contournement.Phase.ORBITE, Contournement.Phase.SORTIE_ORBITE]:
 		_t_etat = minf(_t_etat, TIMEOUT_ETAT_S / 2.0)   # un tour d'orbite dure plus longtemps qu'une phase ordinaire
 	if _en_manoeuvre() and _t_etat > TIMEOUT_ETAT_S:
-		if _etat == Etat.CONTOURNEMENT and not _memoire_ligne.is_empty():
-			_lancer_retrouver()         # manoeuvre trop longue : on continue de chercher la ligne
+		if _etat == Etat.CONTOURNEMENT and not memoire.ligne.is_empty():
+			_lancer_retrouver()
 		else:
-			_changer_etat(Etat.BLOQUE)  # odometrie perdue : on s'arrete plutot que de partir au hasard
+			_changer_etat(Etat.BLOQUE)
 
-	var r := Vector2(90.0, 0.0)         # (angle servo, vitesse cible)
+
+## Retourne Vector2(angle servo, vitesse cible) demandes par l'algorithme de l'etat courant.
+func _commande_selon_etat(sondes: Array, somme: float, n: int, d_mm: float, distance_cm: float, dt: float) -> Vector2:
 	match _etat:
 		Etat.SUIVI:
-			r = _etat_suivi(sondes, d_mm, dt)
-
+			return _etat_suivi(sondes, d_mm, dt)
 		Etat.DECISION:
-			if d_mm < 0.0:
-				_evitement_hors_ligne = false
-				_changer_etat(Etat.SUIVI)       # l'obstacle a disparu
-			elif _t_etat >= contournement.pause_s:
-				if _evitement_hors_ligne:
-					_demarrer_evitement_hors_ligne(d_mm)
-				elif _obstacle_deja_contourne(d_mm) and not _en_avant_sur_chemin(somme, n) and _demi_tour_autorise():
-					_demarrer_demi_tour()               # on roule a l'envers : demi-tour plutot que recontourner
-				else:
-					var centre := odo.point_devant_global(robot.longueur_avant_mm + d_mm + contournement.longueur_obstacle_max_mm / 2.0)
-					_obstacles_contournes.append(centre)
-					if _obstacles_contournes.size() > obstacles_memorises:
-						_obstacles_contournes.pop_front()
-					contournement.demarrer(d_mm, _braquage_moyen)
-					contournement.chemin_entrant = _memoire_vers_manoeuvre()
-					_changer_etat(Etat.CONTOURNEMENT)
-
-		Etat.DEMI_TOUR:
-			r = _demi_tour(n)
-
-		Etat.RETROUVER:
-			r = _retrouver(somme, n, d_mm, dt)
-
-		Etat.ARRIVEE:
-			pass                                # arrete sur la ligne d'arrivee
-
-		Etat.BLOQUE:
-			# arret de securite ; on repart si la voiture est reposee sur la ligne
-			if n > 0:
-				_changer_etat(Etat.SUIVI)
-
-		Etat.ARRET:
-			pass                                # immobile jusqu'a reprendre() ou demarrer_recul()
-
+			_etat_decision(somme, n, d_mm)
 		Etat.CONTOURNEMENT:
-			var phase_avant := contournement.phase
-			var d_brut := distance_cm * 10.0 if distance_cm >= 0.0 else -1.0   # non filtre : pour confirmer un echo
-			r = contournement.calculer(somme, n, _cmd * robot.mm_s_par_cmd, d_mm, d_brut, dt)
-			if contournement.termine:
-				suivi.derniere_erreur = contournement.ecart_ligne_mm()
-				if contournement.hors_ligne and n == 0 and not _memoire_ligne.is_empty():
-					_lancer_retrouver()
-				else:
-					_changer_etat(Etat.SUIVI)
-			elif contournement.echec:
-				if _memoire_ligne.is_empty():
-					_changer_etat(Etat.BLOQUE)
-				else:
-					_lancer_retrouver()         # manoeuvre impossible : on continue de chercher la ligne
-			elif contournement.phase != phase_avant:
-				_t_etat = 0.0                   # le timeout compte pour chaque phase
-			elif _obstacle_pendant_recherche(n, d_mm, d_brut):
-				_evitement_hors_ligne = true
-				_changer_etat(Etat.DECISION)
-				r = Vector2(90.0, 0.0)
-
+			return _etat_contournement(somme, n, d_mm, distance_cm, dt)
+		Etat.CONTOURNEMENT_FLUIDE:
+			var r := fluide.calculer(somme, n)
+			if fluide.termine:
+				suivi.derniere_erreur = fluide.e_reprise
+				_changer_etat(Etat.SUIVI)
+			return r
+		Etat.RATTRAPAGE:
+			var r := rattrapage.calculer(sondes, somme, n, _cmd, _t_etat, dt)
+			if rattrapage.termine:
+				_changer_etat(Etat.SUIVI)
+			return r
+		Etat.RETROUVER:
+			return _etat_retrouver(somme, n, d_mm, dt)
+		Etat.DEMI_TOUR:
+			return _etat_demi_tour(n)
 		Etat.RECUL_LIGNE:
-			r = recul.calculer(somme, n, dt, _cmd)
+			var r := recul.calculer(somme, n, dt, _cmd)
 			if recul.fin == ReculLigne.Fin.TERMINE:
 				_changer_etat(Etat.SUIVI if recul.reprendre_apres_recul else Etat.ARRET)
 			elif recul.fin == ReculLigne.Fin.LIGNE_PERDUE:
 				_changer_etat(Etat.ARRET)
+			return r
+		Etat.BLOQUE:
+			if n > 0:
+				_changer_etat(Etat.SUIVI)     # la voiture a ete reposee sur la ligne
+		# ARRIVEE, ARRET : immobile
+	return Vector2(90.0, 0.0)
 
-	var angle := r.x
-	var cible := r.y
 
-	# Arret d'urgence pendant la manoeuvre (obstacle imprevu tout pres) : on attend, sans faire courir le timeout
-	var urgence := _en_manoeuvre() and cible > 0.0 and d_mm >= 0.0 and d_mm < contournement.distance_securite_mm
-	if urgence:
+## Limites communes a tous les etats (arret d'urgence, bornes, reprise douce, rampe), puis mise a jour de l'odometrie,
+## du sens de marche, de la memoire de la ligne et du braquage moyen.
+func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, dt: float) -> Dictionary:
+	# Arret d'urgence pendant une manoeuvre (obstacle imprevu tout pres) : on attend, sans faire courir le timeout
+	if _en_manoeuvre() and cible > 0.0 and d_mm >= 0.0 and d_mm < contournement.distance_securite_mm:
 		cible = 0.0
 	else:
 		_t_etat += dt
-
-	# Sorties bornees, acceleration limitee
 	angle = clampf(angle, ReglagesRobot.ANGLE_MIN, ReglagesRobot.ANGLE_MAX)
+	if reprise.en_cours(_etat == Etat.SUIVI, dt):
+		cible = reprise.limiter_vitesse(cible)
+		angle = reprise.limiter_angle(angle, dt)
+	reprise.memoriser_angle(angle)
 	_cmd = move_toward(_cmd, cible, robot.rampe_cmd_par_s * dt)
 	var angle_servo := int(round(angle))
-	odo.suivre_servo(float(angle_servo), dt)   # toujours : l'angle reel du servo est connu au debut d'une manoeuvre
-	odo.integrer_global(_cmd * robot.mm_s_par_cmd, dt)   # toujours : position globale (sens de marche)
-	var a_contresens := false
-	if n > 0 and n <= 3 and _etat == Etat.SUIVI and _cmd > 1.0:
-		a_contresens = _remonte_le_chemin(somme / n)
-		_contresens_mm = _contresens_mm + _cmd * robot.mm_s_par_cmd * dt if a_contresens else maxf(0.0, _contresens_mm - _cmd * robot.mm_s_par_cmd * dt)
-		if _contresens_mm >= contresens_max_mm and _demi_tour_autorise():
-			_contresens_mm = 0.0
-			# Ce qui vient d'etre enregistre l'a ete a l'envers : garde, ce passage retournerait la voiture sans fin
-			_chemin.resize(maxi(0, _chemin.size() - _points_passage))
-			_points_passage = 0
-			_demarrer_demi_tour()
-	if n > 0 and not a_contresens and (_etat == Etat.SUIVI or _ligne_reprise()):
-		_memoriser_ligne(somme / n)
+	odo.suivre_servo(float(angle_servo), dt)              # toujours : angle reel du servo connu au debut d'une manoeuvre
+	odo.integrer_global(_cmd * robot.mm_s_par_cmd, dt)    # toujours : position globale (sens de marche)
+	var a_contresens := _surveiller_sens(somme, n, dt)
+	if n > 0 and not a_contresens and (_etat == Etat.SUIVI or _ligne_de_sortie_visible()):
+		memoire.memoriser(somme / n)
 	if _en_manoeuvre():
 		odo.integrer(_cmd * robot.mm_s_par_cmd, dt)
 	if _etat == Etat.SUIVI and absf(_cmd) > 1.0:
@@ -230,130 +173,268 @@ func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
 	return {"vitesse": int(round(_cmd)), "angle": angle_servo}
 
 
-## Garde le point de la ligne vu par les sondes (repere global), un tous les PAS_MEMOIRE_MM, sur le dernier metre.
-func _memoriser_ligne(erreur_mm: float) -> void:
-	var d := robot.distance_sondes_mm
-	var c := odo.cap_global
-	var p := Vector2(odo.x_global + d * sin(c) + erreur_mm * cos(c), odo.y_global + d * cos(c) - erreur_mm * sin(c))
-	if _memoire_ligne.is_empty() or p.distance_to(_memoire_ligne[-1]) > PAS_MEMOIRE_MM:
-		_memoire_ligne.append(p)
-		if _memoire_ligne.size() > POINTS_MEMOIRE:
-			_memoire_ligne.pop_front()
-		_chemin.append(p)
-		_points_passage += 1
-		if _chemin.size() > POINTS_CHEMIN:
-			_chemin.pop_front()
-
-
-## Accord entre le cap et le sens dans lequel ce morceau de ligne a deja ete parcouru (1 = meme sens, -1 = sens inverse).
-## NAN si la ligne sous les sondes n'est pas sur le chemin deja parcouru.
-func _sens_sur_chemin(e: float) -> float:
-	var d := robot.distance_sondes_mm
-	var cap := odo.cap_global
-	var q := Vector2(odo.x_global + d * sin(cap) + e * cos(cap), odo.y_global + d * cos(cap) - e * sin(cap))
-	var avant := Vector2(sin(cap), cos(cap))
-	for i in range(_chemin.size() - POINTS_CHEMIN_RECENTS - 1, 2, -1):
-		if q.distance_squared_to(_chemin[i]) < rayon_chemin_mm * rayon_chemin_mm:
-			var sens := _chemin[i] - _chemin[i - 3]
-			return sens.normalized().dot(avant) if sens.length() > 1.0 else NAN
-	return NAN
-
-
-func _remonte_le_chemin(e: float) -> bool:
-	var accord := _sens_sur_chemin(e)
-	return not is_nan(accord) and accord < -0.5
-
-
-## Vrai si la voiture roule dans le bon sens sur un morceau deja parcouru. Devant un obstacle deja contourne, elle doit
-## alors le recontourner : un demi-tour la renverrait a contresens, puis la surveillance la retournerait, sans fin.
-func _en_avant_sur_chemin(somme: float, n: int) -> bool:
-	if n == 0:
+## En suivi : vrai si la voiture remonte un morceau de ligne deja parcouru. Au-dela de contresens_max_mm : demi-tour,
+## quelle que soit la raison pour laquelle la voiture s'est retournee.
+func _surveiller_sens(somme: float, n: int, dt: float) -> bool:
+	if not (n > 0 and n <= 3 and _etat == Etat.SUIVI and _cmd > 1.0):
 		return false
-	var accord := _sens_sur_chemin(somme / n)
-	return not is_nan(accord) and accord > 0.3
+	var a_contresens := memoire.remonte_le_chemin(somme / n)
+	var pas_mm := _cmd * robot.mm_s_par_cmd * dt
+	_contresens_mm = _contresens_mm + pas_mm if a_contresens else maxf(0.0, _contresens_mm - pas_mm)
+	if _contresens_mm >= contresens_max_mm and memoire.demi_tour_autorise():
+		_contresens_mm = 0.0
+		memoire.annuler_passage()
+		_demarrer_demi_tour()
+	return a_contresens
 
 
-## Vrai pendant les phases du contournement ou les sondes voient la ligne de sortie (pas la ligne entrante).
-func _ligne_reprise() -> bool:
-	return _etat == Etat.CONTOURNEMENT and contournement.phase in [Contournement.Phase.CROISEMENT,
-			Contournement.Phase.ALIGNEMENT, Contournement.Phase.SORTIE_ORBITE, Contournement.Phase.TRAVERS]
+# =====================================================================================================================
+# Etats
+
+## Suivi de ligne, avec arret (ou contournement) devant un obstacle situe sur le chemin.
+func _etat_suivi(sondes: Array, d_mm: float, dt: float) -> Vector2:
+	var r := suivi.calculer(sondes, dt)
+	if suivi.ligne == SuiviLigne.Ligne.PERDUE and suivi.temps_sans_ligne() > retrouver.apres_s and not memoire.ligne.is_empty():
+		_lancer_retrouver()
+		return Vector2(90.0, 0.0)
+	if suivi.arrivee:
+		_changer_etat(Etat.ARRIVEE)
+		return Vector2(90.0, 0.0)
+	rattrapage.observer(dt)
+	# Piste Recul : fin de la ligne -> arret, puis recul en suivant la ligne (les sondes la retrouvent en reculant)
+	if recul_fin_ligne_mm > 0.0 and rattrapage.ligne_perdue():
+		if absf(_cmd) < 0.5:
+			demarrer_recul(recul_fin_ligne_mm, 3.0)
+			recul_fin_ligne_mm = 0.0
+		return Vector2(90.0, 0.0)
+	match rattrapage.reaction():
+		Rattrapage.Reaction.RATTRAPER:
+			rattrapage.demarrer(1 if suivi.derniere_erreur >= 0.0 else -1)
+			_changer_etat(Etat.RATTRAPAGE)
+			return Vector2(90.0, 0.0)
+		Rattrapage.Reaction.ARRETER:
+			_changer_etat(Etat.BLOQUE)        # fin de ligne : repart seule si la voiture est reposee sur la ligne
+			return Vector2(90.0, 0.0)
+	return _approche_obstacle(sondes, r.x, r.y, d_mm, dt)
 
 
-## Sens de marche sur la ligne (repere global), d'apres les derniers points memorises.
-func _sens_ligne() -> Vector2:
-	if _memoire_ligne.size() >= 2:
-		var sens := _memoire_ligne[-1] - _memoire_ligne[maxi(0, _memoire_ligne.size() - 6)]
-		if sens.length() > 1.0:
-			return sens.normalized()
-	return Vector2(sin(odo.cap_global), cos(odo.cap_global))
+## Suite du suivi : obstacle sur le chemin -> contournement fluide, ou freinage jusqu'a l'arret puis DECISION.
+func _approche_obstacle(sondes: Array, angle: float, cible: float, d_mm: float, dt: float) -> Vector2:
+	var contourner := contournement.actif and recul.distance_auto_mm <= 0.0
+	# Ligne perdue : la voiture braque a fond et la portee utile tomberait a ~14 cm, sous la distance d'arret :
+	# elle ne verrait plus rien. Sans ligne a proteger, tout echo proche est sur son chemin.
+	var hors_ligne := suivi.ligne == SuiviLigne.Ligne.PERDUE and suivi.temps_sans_ligne() >= hors_ligne_apres_s
+	var portee := portee_hors_ligne_mm if hors_ligne else _portee_utile_mm()
+	var d_chemin := d_mm if d_mm >= 0.0 and d_mm <= portee else -1.0
+	if _essayer_fluide(sondes, d_chemin, hors_ligne, contourner):
+		return Vector2(90.0, float(fluide.vitesse))
+	if d_chemin >= 0.0:
+		var d_voulue_cm := contournement.distance_manoeuvre_cm if contourner else arret.distance_arret_cm
+		cible = arret.limiter(d_chemin, cible, d_voulue_cm * 10.0)
+	else:
+		arret.relacher()
+	if arret.arrete or arret.en_recul:
+		suivi.geler()                     # pas d'accumulation pendant l'arret
+	if cible < 0.0:
+		angle = 90.0                      # recul en ligne droite
+	var immobile := arret.arrete and absf(_cmd) < 0.5
+	_t_arret = _t_arret + dt if immobile else 0.0
+	if recul.distance_auto_mm > 0.0 and _t_arret >= recul.attente_auto_s:
+		demarrer_recul(recul.distance_auto_mm)
+	elif contourner and immobile:
+		_evitement_hors_ligne = hors_ligne
+		_noter_repli("ligne_perdue" if hors_ligne else (_raison_repli if _raison_repli != "" else "echo_intermittent"))
+		_changer_etat(Etat.DECISION)
+	return Vector2(angle, cible)
 
 
-## Ou chercher la ligne : devant le dernier point vu (ou devant l'obstacle qui vient d'etre passe), dans le sens de marche.
-## Revenir au dernier point vu ramenait la voiture sur le chemin deja parcouru.
-func _cible_ligne() -> Vector2:
-	var base := _memoire_ligne[-1]
-	var proches: Array[Vector2] = [_obstacle_recent]
-	if not _obstacles_contournes.is_empty():
-		proches.append(_obstacles_contournes[-1])
-	for o in proches:
-		if o.is_finite() and o.distance_to(_memoire_ligne[-1]) < rayon_obstacle_recent_mm and (o - base).dot(_sens_ligne()) > 0.0:
-			base = o
-	return base + _sens_ligne() * avance_cible_mm
-
-
-func _lancer_retrouver() -> void:
-	_cible_retrouver = _cible_ligne()
-	_t_spirale = -1.0
-	_cote_spirale = 1 if suivi.derniere_erreur >= 0.0 else -1
-	_changer_etat(Etat.RETROUVER)
-
-
-## Vrai si la ligne vue est la ligne deja suivie et que la voiture y roule a contresens.
-func _sur_ligne_a_contresens(e: float) -> bool:
-	var d := robot.distance_sondes_mm
-	var cap := odo.cap_global
-	var q := Vector2(odo.x_global + d * sin(cap) + e * cos(cap), odo.y_global + d * cos(cap) - e * sin(cap))
-	for i in range(_memoire_ligne.size() - 1, 0, -1):
-		if q.distance_to(_memoire_ligne[i]) < rayon_meme_ligne_mm:
-			var sens := _memoire_ligne[i] - _memoire_ligne[maxi(0, i - 5)]
-			return sens.length() > 1.0 and sens.normalized().dot(Vector2(sin(cap), cos(cap))) < -0.3
+## Lance le contournement fluide si l'obstacle est confirme assez loin, voiture en ligne droite et sur la ligne.
+## Sinon (vu trop pres, en virage) : rien, le freinage normal menera au contournement par phases.
+func _essayer_fluide(sondes: Array, d_chemin: float, hors_ligne: bool, contourner: bool) -> bool:
+	if not (contourner and contournement_fluide and not hors_ligne and d_chemin >= 0.0 and d_chemin <= fluide.distance_declenchement_mm):
+		_n_echos_fluide = 0
+		_raison_repli = ""
+		return false
+	_n_echos_fluide += 1
+	if _n_echos_fluide < fluide.confirmations:
+		return false
+	if d_chemin >= fluide.distance_min_mm and absf(_braquage_moyen) < contournement.seuil_virage_deg:
+		var lu := SuiviLigne.lire(sondes)
+		_demarrer_fluide(d_chemin, lu.x / lu.y if lu.y > 0.0 else 0.0)
+		return true
+	if _raison_repli == "":
+		_raison_repli = "vu_trop_pres" if d_chemin < fluide.distance_min_mm else "en_virage"
 	return false
 
 
-## Va vers l'endroit ou la ligne doit se trouver, toujours en avancant, puis la cherche en spirale jusqu'a la croiser.
-func _retrouver(somme: float, n: int, d_mm: float, dt: float) -> Vector2:
+## Immobile devant l'obstacle : apres la pause, choisit la manoeuvre.
+func _etat_decision(somme: float, n: int, d_mm: float) -> void:
+	if d_mm < 0.0:
+		_evitement_hors_ligne = false
+		_changer_etat(Etat.SUIVI)         # l'obstacle a disparu
+	elif _t_etat >= contournement.pause_s:
+		if _evitement_hors_ligne:
+			_demarrer_evitement_hors_ligne(d_mm)
+		elif memoire.obstacle_deja_contourne(d_mm) and not memoire.en_avant_sur_chemin(somme, n) and memoire.demi_tour_autorise():
+			_demarrer_demi_tour()         # on roule a l'envers : demi-tour plutot que recontourner
+		else:
+			_demarrer_contournement(d_mm)
+
+
+func _etat_contournement(somme: float, n: int, d_mm: float, distance_cm: float, dt: float) -> Vector2:
+	var phase_avant := contournement.phase
+	var d_brut := distance_cm * 10.0 if distance_cm >= 0.0 else -1.0   # non filtre : pour confirmer un echo
+	var r := contournement.calculer(somme, n, _cmd * robot.mm_s_par_cmd, d_mm, d_brut, dt)
+	if contournement.termine:
+		suivi.derniere_erreur = contournement.ecart_ligne_mm()
+		if contournement.hors_ligne and n == 0 and not memoire.ligne.is_empty():
+			_lancer_retrouver()
+		else:
+			_changer_etat(Etat.SUIVI)
+	elif contournement.echec:
+		if memoire.ligne.is_empty():
+			_changer_etat(Etat.BLOQUE)
+		else:
+			_lancer_retrouver()           # manoeuvre impossible : on continue de chercher la ligne
+	elif contournement.phase != phase_avant:
+		_t_etat = 0.0                     # le timeout compte pour chaque phase
+	elif _obstacle_pendant_recherche(n, d_mm, d_brut):
+		_evitement_hors_ligne = true
+		_noter_repli("pendant_manoeuvre")
+		_changer_etat(Etat.DECISION)
+		return Vector2(90.0, 0.0)
+	return r
+
+
+func _etat_retrouver(somme: float, n: int, d_mm: float, dt: float) -> Vector2:
 	if n > 0:
 		var e := somme / n
 		suivi.derniere_erreur = e if e != 0.0 else 1.0
-		if _sur_ligne_a_contresens(e) and _demi_tour_autorise():
+		if memoire.sur_ligne_a_contresens(e) and memoire.demi_tour_autorise():
 			_demarrer_demi_tour()
 		else:
 			_changer_etat(Etat.SUIVI)
 		return Vector2(90.0, 0.0)
-	if _t_etat > retrouver_max_s:
+	if _t_etat > retrouver.max_s:
 		_changer_etat(Etat.BLOQUE)
 		return Vector2(90.0, 0.0)
 	if d_mm >= 0.0 and d_mm <= _distance_evitement_mm():
 		_evitement_hors_ligne = true
+		_noter_repli("pendant_recherche_ligne")
 		_changer_etat(Etat.DECISION)
 		return Vector2(90.0, 0.0)
-	var ici := Vector2(odo.x_global, odo.y_global)
-	var vers := _cible_retrouver - ici
-	var rel := wrapf(atan2(vers.x, vers.y) - odo.cap_global, -PI, PI)
-	if ici.distance_to(_obstacle_recent) < rayon_obstacle_recent_mm:
-		# Tout pres de l'obstacle evite, l'ultrason ne voit pas ses coins sur le cote : on s'en ecarte d'abord.
-		var vers_obstacle := _obstacle_recent - ici
-		var rel_obstacle := wrapf(atan2(vers_obstacle.x, vers_obstacle.y) - odo.cap_global, -PI, PI)
-		if absf(rel_obstacle) < deg_to_rad(100.0):
-			return Vector2(90.0 - 45.0 * signf(rel_obstacle), float(vitesse_retrouver))
-	if _t_spirale < 0.0 and (vers.length() < rayon_cible_mm or _t_etat > approche_max_s):
-		_t_spirale = 0.0
-		_cote_spirale = 1 if rel >= 0.0 else -1
-	if _t_spirale >= 0.0:
-		_t_spirale += dt
-		return Vector2(90.0 + _cote_spirale * 45.0 / (1.0 + _t_spirale / spirale_s), float(vitesse_retrouver))
-	var servo := robot.roues_vers_servo(rad_to_deg(rel) * gain_retrouver)
-	return Vector2(90.0 + clampf(servo, -45.0, 45.0), float(vitesse_retrouver))
+	return retrouver.conduire(memoire.obstacle_hors_ligne, _t_etat, dt)
+
+
+func _etat_demi_tour(n: int) -> Vector2:
+	var r := demi_tour.calculer(n, odo.cap_global, _t_etat)
+	if demi_tour.termine:
+		suivi.derniere_erreur = demi_tour.ecart_reprise_mm()
+		if n == 0 and not memoire.ligne.is_empty():
+			_lancer_retrouver()           # demi-tour fini sans ligne sous les sondes : on la cherche
+		else:
+			_changer_etat(Etat.SUIVI)
+	return r
+
+
+# =====================================================================================================================
+# Debut des manoeuvres
+
+func _demarrer_contournement(d_mm: float) -> void:
+	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + contournement.longueur_obstacle_max_mm / 2.0))
+	contournement.demarrer(d_mm, _braquage_moyen)
+	contournement.chemin_entrant = memoire.vers_repere_manoeuvre()
+	_changer_etat(Etat.CONTOURNEMENT)
+
+
+## e_mm : ecart de la ligne lu par les sondes au depart (mm, > 0 = a droite).
+func _demarrer_fluide(d_mm: float, e_mm: float) -> void:
+	var c := contournement.cote_par_defaut
+	if contournement.cote_interieur_virage and absf(_braquage_moyen) >= contournement.seuil_virage_deg:
+		c = 1 if _braquage_moyen > 0.0 else -1
+	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + fluide.profondeur_obstacle_mm / 2.0))
+	_n_echos_fluide = 0
+	# Cap de la voiture par rapport a la ligne (droite ajustee sur les derniers points memorises) et position laterale
+	# de l'essieu : les sondes, a distance_sondes_mm devant, voient la ligne a e_mm a droite du centre de la barre.
+	var cap_rel := 0.0
+	if memoire.ligne.size() >= 6:
+		var sens := memoire.direction_ajustee(fluide.points_direction_ligne)
+		cap_rel = wrapf(odo.cap_global - atan2(sens.x, sens.y), -PI, PI)
+	var x0 := -e_mm * cos(cap_rel) - robot.distance_sondes_mm * sin(cap_rel)
+	fluide.demarrer(d_mm, c, x0, cap_rel)
+	_changer_etat(Etat.CONTOURNEMENT_FLUIDE)
+
+
+## Evite un obstacle alors que la voiture n'est pas sur la ligne : du cote ou la ligne doit se trouver, sans supposer
+## qu'elle passe sous l'obstacle ; ensuite RETROUVER ramene la voiture vers elle.
+func _demarrer_evitement_hors_ligne(d_mm: float) -> void:
+	_evitement_hors_ligne = false
+	_n_echos_hors_ligne = 0
+	memoire.obstacle_hors_ligne = odo.point_devant_global(robot.longueur_avant_mm + d_mm + contournement.longueur_obstacle_max_mm / 2.0)
+	var c := 1 if suivi.derniere_erreur >= 0.0 else -1
+	if not memoire.ligne.is_empty():
+		var vers := retrouver.cible_ligne(memoire) - Vector2(odo.x_global, odo.y_global)
+		c = 1 if wrapf(atan2(vers.x, vers.y) - odo.cap_global, -PI, PI) >= 0.0 else -1
+	contournement.demarrer_hors_ligne(d_mm, c)
+	contournement.chemin_entrant = memoire.vers_repere_manoeuvre()
+	_changer_etat(Etat.CONTOURNEMENT)
+
+
+func _demarrer_demi_tour() -> void:
+	memoire.noter_demi_tour()
+	_changer_etat(Etat.DEMI_TOUR)
+	demi_tour.demarrer(odo.cap_global, 1 if suivi.derniere_erreur >= 0.0 else -1)
+
+
+func _lancer_retrouver() -> void:
+	retrouver.demarrer(memoire, suivi.derniere_erreur)
+	_changer_etat(Etat.RETROUVER)
+
+
+## Recule en suivant la ligne sur distance_mm (limite a ReculLigne.RECUL_MAX_MM).
+## La voiture doit etre sur la ligne et a peu pres dans son axe : ce cap sert de reference (cap = 0).
+func demarrer_recul(distance_mm: float, attente_ligne_s := 0.0) -> void:
+	recul.demarrer(distance_mm, attente_ligne_s)
+	_changer_etat(Etat.RECUL_LIGNE)
+
+
+func _changer_etat(e: Etat) -> void:
+	if e == Etat.SUIVI and _etat in ETATS_MANOEUVRE:
+		reprise.demarrer()
+	_etat = e
+	_t_etat = 0.0
+	if e == Etat.SUIVI:
+		memoire.nouveau_passage()
+		rattrapage.nouveau_suivi()
+		suivi.reinitialiser()
+		arret.relacher()
+
+
+# =====================================================================================================================
+# Outils
+
+## Vrai pendant les etats ou la position est suivie par odometrie.
+func _en_manoeuvre() -> bool:
+	return _etat == Etat.CONTOURNEMENT or _etat == Etat.RECUL_LIGNE or _etat == Etat.RATTRAPAGE \
+			or _etat == Etat.CONTOURNEMENT_FLUIDE
+
+
+## Vrai pendant les phases du contournement ou les sondes voient la ligne de sortie (pas la ligne entrante).
+func _ligne_de_sortie_visible() -> bool:
+	return _etat == Etat.CONTOURNEMENT and contournement.phase in [Contournement.Phase.CROISEMENT,
+			Contournement.Phase.ALIGNEMENT, Contournement.Phase.SORTIE_ORBITE, Contournement.Phase.TRAVERS]
+
+
+## Distance jusqu'a laquelle un echo peut venir d'un obstacle pose sur la ligne.
+## En virage de rayon R (deduit du braquage moyen), la ligne s'ecarte de l'axe du capteur d'environ y^2 / (2 R)
+## a la distance y ; elle reste dans le cone tant que y^2 / (2 R) < y * tan(demi-angle) + demi-largeur d'obstacle.
+func _portee_utile_mm() -> float:
+	var delta := deg_to_rad(absf(robot.servo_vers_roues_deg(_braquage_moyen)))
+	if delta < deg_to_rad(1.0):
+		return INF                        # ligne droite : toute la portee
+	var rayon := robot.empattement_mm / tan(delta)
+	var a := rayon * tan(deg_to_rad(robot.demi_angle_ultrason_deg))
+	return a + sqrt(a * a + rayon * contournement.largeur_obstacle_min_mm)
 
 
 ## Distance (mm, mesuree par l'ultrason) a laquelle la voiture s'arrete pour eviter un obstacle.
@@ -364,92 +445,20 @@ func _distance_evitement_mm() -> float:
 ## Pendant une orbite ou une recherche, sans ligne sous les sondes : vrai si un autre obstacle que celui contourne est devant.
 func _obstacle_pendant_recherche(n: int, d_mm: float, d_brut: float) -> bool:
 	var cherche := contournement.phase in [Contournement.Phase.ORBITE, Contournement.Phase.RECHERCHE]
-	if not cherche or n > 0 or d_mm < 0.0 or d_mm > _distance_evitement_mm() or d_brut < 0.0 or _obstacle_deja_contourne(d_mm):
+	if not cherche or n > 0 or d_mm < 0.0 or d_mm > _distance_evitement_mm() or d_brut < 0.0 or memoire.obstacle_deja_contourne(d_mm):
 		_n_echos_hors_ligne = 0
 		return false
 	_n_echos_hors_ligne += 1
 	return _n_echos_hors_ligne >= echos_hors_ligne
 
 
-## Evite un obstacle alors que la voiture n'est pas sur la ligne : du cote du dernier point de ligne vu, sans supposer
-## que la ligne passe sous l'obstacle ; ensuite RETROUVER ramene la voiture vers ce point.
-func _demarrer_evitement_hors_ligne(d_mm: float) -> void:
-	_evitement_hors_ligne = false
-	_n_echos_hors_ligne = 0
-	_obstacle_recent = odo.point_devant_global(robot.longueur_avant_mm + d_mm + contournement.longueur_obstacle_max_mm / 2.0)
-	var c := 1 if suivi.derniere_erreur >= 0.0 else -1
-	if not _memoire_ligne.is_empty():
-		var vers := _cible_ligne() - Vector2(odo.x_global, odo.y_global)
-		c = 1 if wrapf(atan2(vers.x, vers.y) - odo.cap_global, -PI, PI) >= 0.0 else -1
-	contournement.demarrer_hors_ligne(d_mm, c)
-	contournement.chemin_entrant = _memoire_vers_manoeuvre()
-	_changer_etat(Etat.CONTOURNEMENT)
+func _noter_repli(raison: String) -> void:
+	raisons_repli[raison] = int(raisons_repli.get(raison, 0)) + 1
+	_raison_repli = ""
 
 
-## La ligne entrante memorisee, exprimee dans le repere de la manoeuvre qui commence (origine : essieu arriere,
-## y vers l'avant, x vers la droite).
-func _memoire_vers_manoeuvre() -> Array[Vector2]:
-	var c := odo.cap_global
-	var avant := Vector2(sin(c), cos(c))
-	var droite := Vector2(cos(c), -sin(c))
-	var origine := Vector2(odo.x_global, odo.y_global)
-	var res: Array[Vector2] = []
-	for p in _memoire_ligne:
-		res.append(Vector2((p - origine).dot(droite), (p - origine).dot(avant)))
-	return res
-
-
-## Vrai si l'echo a d_mm devant tombe sur un obstacle deja contourne : la voiture le revoit de dos, elle roule a l'envers.
-func _obstacle_deja_contourne(d_mm: float) -> bool:
-	var echo := odo.point_devant_global(robot.longueur_avant_mm + d_mm)
-	for o in _obstacles_contournes:
-		if echo.distance_to(o) < rayon_meme_obstacle_mm:
-			return true
-	return false
-
-
-## Faux apres plusieurs demi-tours au meme endroit : la voiture tournerait sur place indefiniment.
-func _demi_tour_autorise() -> bool:
-	var ici := Vector2(odo.x_global, odo.y_global)
-	var deja := 0
-	for p in _demi_tours:
-		if ici.distance_to(p) < rayon_meme_demi_tour_mm:
-			deja += 1
-	return deja < demi_tours_max_au_meme_endroit
-
-
-func _demarrer_demi_tour() -> void:
-	_demi_tours.append(Vector2(odo.x_global, odo.y_global))
-	if _demi_tours.size() > DEMI_TOURS_MEMORISES:
-		_demi_tours.pop_front()
-	_changer_etat(Etat.DEMI_TOUR)
-	_cap_debut_demi_tour = odo.cap_global
-	_cote_demi_tour = 1 if suivi.derniere_erreur >= 0.0 else -1
-
-
-## Pivote sur place en plusieurs manoeuvres (avant braquage maximal, arriere braquage oppose : la voiture tourne
-## toujours du meme cote) jusqu'a environ 180 deg, puis reprend le suivi des que la ligne est vue.
-func _demi_tour(n: int) -> Vector2:
-	var tourne := absf(odo.cap_global - _cap_debut_demi_tour)
-	if (tourne >= deg_to_rad(150.0) and n > 0) or tourne >= deg_to_rad(210.0) or _t_etat > demi_tour_max_s:
-		suivi.derniere_erreur = 38.0 * _cote_demi_tour
-		if n == 0 and not _memoire_ligne.is_empty():
-			_lancer_retrouver()         # demi-tour fini sans ligne sous les sondes : on la cherche au lieu de tourner en rond
-		else:
-			_changer_etat(Etat.SUIVI)
-		return Vector2(90.0, 0.0)
-	var periode := demi_tour_avant_s + demi_tour_arriere_s
-	if fmod(_t_etat, periode) < demi_tour_avant_s:
-		return Vector2(90.0 + 45.0 * _cote_demi_tour, float(vitesse_demi_tour))
-	return Vector2(90.0 - 45.0 * _cote_demi_tour, -float(vitesse_demi_tour))
-
-
-## Recule en suivant la ligne sur distance_mm (limite a ReculLigne.RECUL_MAX_MM).
-## La voiture doit etre sur la ligne et a peu pres dans son axe : ce cap sert de reference (cap = 0).
-func demarrer_recul(distance_mm: float) -> void:
-	recul.demarrer(distance_mm)
-	_changer_etat(Etat.RECUL_LIGNE)
-
+# =====================================================================================================================
+# Interface (simulation, HUD, journal)
 
 ## Nom de l'etat courant, a afficher dans le HUD pour verifier ce que fait la voiture.
 func nom_etat() -> String:
@@ -483,67 +492,5 @@ func reinitialiser() -> void:
 	suivi.derniere_erreur = 0.0
 	ultrason.reinitialiser()
 	_evitement_hors_ligne = false
-	_obstacle_recent = Vector2(INF, INF)
+	memoire.obstacle_hors_ligne = Vector2(INF, INF)
 	_changer_etat(Etat.SUIVI)
-
-
-## Suivi de ligne, avec arret (ou recul) devant un obstacle situe sur le chemin. Retourne Vector2(angle, vitesse cible).
-func _etat_suivi(sondes: Array, d_mm: float, dt: float) -> Vector2:
-	var r := suivi.calculer(sondes, dt)
-	if suivi.ligne == SuiviLigne.Ligne.PERDUE and suivi.temps_sans_ligne() > retrouver_apres_s and not _memoire_ligne.is_empty():
-		_lancer_retrouver()
-		return Vector2(90.0, 0.0)
-	if suivi.arrivee:
-		_changer_etat(Etat.ARRIVEE)
-		return Vector2(90.0, 0.0)
-	var angle := r.x
-	var cible := r.y
-	var contourner := contournement.actif and recul.distance_auto_mm <= 0.0
-	# Ligne perdue : la voiture braque a fond et la portee utile tomberait a ~14 cm, sous la distance d'arret :
-	# elle ne verrait plus rien. Sans ligne a proteger, tout echo proche est sur son chemin.
-	var hors_ligne := suivi.ligne == SuiviLigne.Ligne.PERDUE and suivi.temps_sans_ligne() >= hors_ligne_apres_s
-	var portee := portee_hors_ligne_mm if hors_ligne else _portee_utile_mm()
-	var d_chemin := d_mm if d_mm >= 0.0 and d_mm <= portee else -1.0
-	if d_chemin >= 0.0:
-		var d_voulue_cm := contournement.distance_manoeuvre_cm if contourner else arret.distance_arret_cm
-		cible = arret.limiter(d_chemin, cible, d_voulue_cm * 10.0)
-	else:
-		arret.relacher()
-	if arret.arrete or arret.en_recul:
-		suivi.geler()                       # pas d'accumulation pendant l'arret
-	if cible < 0.0:
-		angle = 90.0                        # recul en ligne droite
-	var immobile := arret.arrete and absf(_cmd) < 0.5
-	_t_arret = _t_arret + dt if immobile else 0.0
-	if recul.distance_auto_mm > 0.0 and _t_arret >= recul.attente_auto_s:
-		demarrer_recul(recul.distance_auto_mm)
-	elif contourner and immobile:
-		_evitement_hors_ligne = hors_ligne
-		_changer_etat(Etat.DECISION)
-	return Vector2(angle, cible)
-
-
-## Distance jusqu'a laquelle un echo peut venir d'un obstacle pose sur la ligne.
-## En virage de rayon R (deduit du braquage moyen), la ligne s'ecarte de l'axe du capteur d'environ y^2 / (2 R)
-## a la distance y ; elle reste dans le cone tant que y^2 / (2 R) < y * tan(demi-angle) + demi-largeur d'obstacle.
-func _portee_utile_mm() -> float:
-	var delta := deg_to_rad(absf(robot.servo_vers_roues_deg(_braquage_moyen)))
-	if delta < deg_to_rad(1.0):
-		return INF                          # ligne droite : toute la portee
-	var rayon := robot.empattement_mm / tan(delta)
-	var a := rayon * tan(deg_to_rad(robot.demi_angle_ultrason_deg))
-	return a + sqrt(a * a + rayon * contournement.largeur_obstacle_min_mm)
-
-
-## Vrai pendant les etats ou la position est suivie par odometrie.
-func _en_manoeuvre() -> bool:
-	return _etat == Etat.CONTOURNEMENT or _etat == Etat.RECUL_LIGNE
-
-
-func _changer_etat(e: Etat) -> void:
-	_etat = e
-	_t_etat = 0.0
-	if e == Etat.SUIVI:
-		_points_passage = 0
-		suivi.reinitialiser()
-		arret.relacher()

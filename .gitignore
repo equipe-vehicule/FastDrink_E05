@@ -1,3 +1,9 @@
 # Godot 4+ specific ignores
 .godot/
 journaux/
+
+# Plugin MCP local (ne pas pousser)
+addons/godot_mcp/
+
+# Fichiers temporaires de Godot
+*.tmp

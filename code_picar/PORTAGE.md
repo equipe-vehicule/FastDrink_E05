@@ -1,6 +1,6 @@
 # Portage du contrôleur Godot en Python (étape 11)
 
-But : le Raspberry Pi exécute **la même logique** que la simulation validée sur les bancs (`simulation/controleur.gd` et ses modules), avec la même interface : `calculer(sondes, distance_cm, dt, mesure_nouvelle=True) -> (vitesse, angle)`. Critère « porté » : `tests/test_rejeu.py` rejoue les 6 traces de référence sans écart.
+But : le Raspberry Pi exécute **la même logique** que la simulation validée sur les bancs (`simulation/controleur.gd` et ses modules), avec la même interface : `calculer(sondes, distance_cm, dt, mesure_nouvelle=True) -> (vitesse, angle)`. Critère « porté » : `tests/test_rejeu.py` rejoue les 7 traces de référence sans écart.
 
 ## Socle (fait)
 
@@ -27,6 +27,7 @@ But : le Raspberry Pi exécute **la même logique** que la simulation validée s
 | `reprise_douce.gd` | `reprise_douce.py` | `RepriseDouce` | A |
 | `contournement.gd` | `contournement.py` | `Contournement` | B |
 | `contournement_fluide.gd` | `contournement_fluide.py` | `ContournementFluide` | B |
+| `geometrie_voiture.gd` | `geometrie_voiture.py` | `GeometrieVoiture` (`touche`) | B (appelée par les deux contournements, ajoutée au portage) |
 | `memoire_parcours.gd` | `memoire_parcours.py` | `MemoireParcours` | C |
 | `retrouver_ligne.gd` | `retrouver_ligne.py` | `RetrouverLigne` | C |
 | `demi_tour.gd` | `demi_tour.py` | `DemiTour` | C |
@@ -58,14 +59,14 @@ Non portés (simulation seulement) : `simulation.gd`, `vehicule.gd`, `bille_cuve
 9. **`match`** (`contournement.gd`, `controleur.gd`) → `if/elif` ; `Etat.keys()[e]` → `e.name`.
 10. **Arguments par défaut** : `calculer(..., mesure_nouvelle := true)`, `demarrer(distance, attente := 0.0)` : mêmes valeurs par défaut.
 11. **Bibliothèque mathématique** : `sin`, `cos`, `tan` de Godot (Windows) diffèrent de 1 ulp de CPython pour ~5 % des valeurs d'un échantillon large ; sur les traces de référence, aucun écart observé (odométrie identique au bit près). Le rejeu garde une petite tolérance (`rejeu.py`) ; sur le Pi (glibc), même ordre de grandeur, sans effet sur la conduite.
-12. **Sur le robot** : `mesure_nouvelle` doit venir du pilote ultrason (vrai si la mesure est arrivée depuis le tour précédent) ; `dt` = temps réellement écoulé depuis le tour précédent ; `distance_cm` = -1 sans écho. Le modèle idéal de la simulation n'existe pas en Python.
+12. **Sur le robot** : `mesure_nouvelle` doit venir du pilote ultrason (vrai si la mesure est arrivée depuis le tour précédent) ; `dt` = temps réellement écoulé depuis le tour précédent ; `distance_cm` = -1 sans écho. Le modèle idéal de la simulation n'existe pas en Python. Contrat d'appel (relecture du 14 nov.) : créer le contrôleur puis appeler `reglages.regler_controleur(c)` avant le premier `calculer` (sinon division par zéro) ; `sondes` = liste de 5 valeurs 0/1 de gauche à droite, 1 = ligne (seuiller les valeurs analogiques avant) ; `dt` fini et borné par le pilote (un `dt` très grand est intégré tel quel par l'odométrie ; borne à mesurer, #64) ; `distance_cm` NaN à remplacer par -1 ; `frequence_controle_hz` > 0 dans le JSON (boucles de prévision des contournements). Ces garde-fous relèvent du pilote du robot (#31) : le port reste identique au .gd.
 
 ## Rejeu
 
 - Une trace = une ligne d'en-tête (tous les réglages effectifs du contrôleur Godot et les valeurs physiques du robot), une ligne par tour (entrées de `calculer()`, sorties, puis état, consigne, distance filtrée, odométries), une ligne de fin.
 - Comparaison : états, phases, vitesse et angle exactement ; réels à 1e-9 + 1e-12 × |valeur| près. Le premier tour divergent est rendu avec les entrées et les 3 tours précédents.
 - `py -3 -m pytest -q tests/test_rejeu.py -s` (un cas : `-k recul_court`).
-- Régénérer les traces (après un changement de la simulation ou d'un JSON de réglages) : depuis la racine du dépôt, `G --headless --path . --fixed-fps 240 res://simulation/simulation.tscn -- --scenarios=virage_serre,obstacle_avant_virage,recul_court_debout --modele=ideal --trace --quitter`, puis `-- --scenarios=reference_droite,parcours_fourni --trace --quitter`, puis `-- --banc=1 --graine-depart=79191 --reglage=epreuve:distance_recul_mm=50.0 --trace --quitter` ; copier chaque `journaux/trace_*.jsonl` imprimé (« TRACE ») en `tests/traces/<modele>_<cas>.jsonl.gz` (gzip). Vérifié : ces commandes redonnent les 6 traces actuelles octet pour octet (trace déterministe, cas indépendants).
+- Régénérer les traces (après un changement de la simulation ou d'un JSON de réglages) : depuis la racine du dépôt, `G --headless --path . --fixed-fps 240 res://simulation/simulation.tscn -- --scenarios=virage_serre,obstacle_avant_virage,recul_court_debout --modele=ideal --trace --quitter`, puis `-- --scenarios=reference_droite,parcours_fourni --trace --quitter`, puis `-- --banc=1 --graine-depart=79191 --reglage=epreuve:distance_recul_mm=50.0 --trace --quitter`, puis `-- --scenarios=epingle_180 --reglage=rattrapage:actif=false --reglage=retrouver:apres_s=1.0 --trace --quitter` ; copier chaque `journaux/trace_*.jsonl` imprimé (« TRACE ») en `tests/traces/<modele>_<cas>.jsonl.gz` (gzip). Vérifié : ces commandes redonnent les traces actuelles octet pour octet (trace déterministe, cas indépendants).
 
 | Trace | Tours | Couvre |
 | --- | --- | --- |
@@ -75,10 +76,11 @@ Non portés (simulation seulement) : `simulation.gd`, `vehicule.gd`, `bille_cuve
 | `realiste_reference_droite` | 830 | filtre médiane + Kalman, table de vitesse, arrêt, recul, fluide |
 | `realiste_parcours_fourni` | 2305 | suivi et rattrapages sur le parcours du cours |
 | `realiste_graine_79191_recul_50` | 3000 | D_recul 50 : contournements par phases enchaînés |
+| `realiste_epingle_180_retrouver` | 1322 | RETROUVER : rattrapage désactivé par réglages d'essai (enregistrés dans l'en-tête) |
 
-Non couverts par les traces (aucun banc ne les atteint) : RETROUVER, DEMI_TOUR, BLOQUE en cours de route, orbite et recherche du contournement par phases, RECUL_LIGNE de la piste « Recul ».
+Non couverts par les traces (aucun banc ne les atteint) : DEMI_TOUR (tests unitaires seulement), BLOQUE et ARRET en cours de route, RECUL_LIGNE de la piste « Recul », évitements hors ligne, surveillance du contresens. ORBITE, SORTIE_ORBITE, RECHERCHE, TRAVERS et CROISEMENT sont couverts par `test_lot_b` (entrées pseudo-aléatoires comparées aux valeurs calculées par Godot) ; ALIGNEMENT par les traces.
 
-## Trois lots indépendants (fichiers disjoints)
+## Trois lots indépendants (fichiers disjoints) – portés le 14 nov., rejeu des 7 traces identique
 
 | Lot | Fichiers à écrire | Lignes .gd | Dépend du socle | Test avant intégration |
 | --- | --- | --- | --- | --- |

@@ -16,6 +16,8 @@ const FichierReglages := preload("res://simulation/fichier_reglages.gd")
 const ReglagesAlgorithmes := preload("res://simulation/reglages_algorithmes.gd")
 ## Scenarios courts et rejouables (option --scenarios=tous ou --scenarios=nom1,nom2).
 const Scenarios := preload("res://simulation/scenarios.gd")
+## Trace du controleur pour le rejeu en Python (option --trace) : entrees et sorties de chaque tour.
+const TraceControleur := preload("res://simulation/trace_controleur.gd")
 
 @export var piste_initiale := 1        ## index dans Pistes.LISTE (1 = courbes, 6 = aleatoire)
 @export var mode_auto := true
@@ -40,6 +42,10 @@ const Scenarios := preload("res://simulation/scenarios.gd")
 ## Acceleration du temps (essais). ATTENTION : Engine.time_scale agrandit aussi le pas de la physique
 ## (4 -> pas de 1/60 s au lieu de 1/240 s) : les resultats changent un peu avec cette valeur.
 @export var vitesse_temps := 1.0
+## Trace du controleur (etape 11, portage Python) : un fichier journaux/trace_*.jsonl par cas, entrees et sorties de
+## chaque tour de Controleur.calculer() en pleine precision. Lecture seule : ne change aucun resultat.
+## Ligne de commande : --trace.
+@export var trace_controleur := false
 
 ## Valeurs du robot {cle JSON: valeur} : reglages_robot.json + cles "robot:" de reglages_essai.
 var reglages_robot: Dictionary = {}
@@ -67,6 +73,8 @@ var _reglages_cas: Dictionary = {}    # reglages_essai propres au scenario en co
 var _graine_cas := 0                  # graine de l'aleatoire du cas en cours (bruit de l'ultrason) : graine de la piste,
                                       # ou hash du nom du scenario ; 0 hors banc
 var _compteur_vu := 0                 # vehicule.compteur_mesures au dernier tour du programme du robot
+var _trace := TraceControleur.new()
+var _nom_cas := ""                    # nom du cas en cours (trace) : scenario, graine_<n> ou piste_<n>
 
 func _ready() -> void:
 	# Par defaut Godot fait au plus 8 pas physiques par image : a 240 pas/s, sous 30 images/s, le temps ralentit
@@ -100,6 +108,7 @@ func _ready() -> void:
 	elif _scenarios_demandes != "" and _quitter_a_la_fin:
 		get_tree().quit.call_deferred()   # aucun scenario valide : rien a faire
 	else:
+		_nom_cas = "piste_%d" % piste_initiale
 		charger_piste(piste_initiale)
 
 ## Valeurs du robot : reglages_robot.json, puis les cles "robot:<cle>" de reglages_essai (essais sans toucher au fichier).
@@ -142,6 +151,7 @@ func _verifier_coherence() -> void:
 ##   --parametre-piste=<nom>=<valeur> (repetable) : reglage de la piste aleatoire, ex. --parametre-piste=faces_aleatoires=false.
 ##   --modele=ideal : comme modele_ideal (modele ideal du robot ; --modele=realiste : modele realiste, defaut).
 ##   --journal : comme journal_au_demarrage (journal detaille de chaque piste).
+##   --trace : comme trace_controleur (trace de chaque tour du controleur, pour le rejeu en Python).
 func _lire_ligne_de_commande() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--piste="): piste_initiale = int(arg.get_slice("=", 1))
@@ -162,6 +172,7 @@ func _lire_ligne_de_commande() -> void:
 				push_error("--parametre-piste : « %s » n'existe pas dans ParametresPiste." % nom)
 		elif arg.begins_with("--modele="): modele_ideal = arg.get_slice("=", 1) == "ideal"
 		elif arg == "--journal": journal_au_demarrage = true   # journal detaille journaux/essai_*.csv
+		elif arg == "--trace": trace_controleur = true   # trace journaux/trace_*.jsonl (rejeu Python)
 		elif arg == "--quitter": _quitter_a_la_fin = true
 
 func _brancher_signaux() -> void:
@@ -187,6 +198,7 @@ func _charger_cas_suivant() -> void:
 	while not banc.termine:
 		var cas = banc.prochain_cas()
 		if cas is Dictionary:
+			_nom_cas = String(cas["nom"])
 			if charger_scenario(cas):
 				banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
 				banc.fin_ligne = pistes.fin_de_ligne()
@@ -194,10 +206,12 @@ func _charger_cas_suivant() -> void:
 			banc.noter_invalide()
 		else:
 			_reglages_cas = {}
+			_nom_cas = "graine_%d" % cas
 			charger_piste(Pistes.INDEX_ALEATOIRE, cas)
 			banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
 			banc.fin_ligne = pistes.fin_de_ligne()
 			return
+	_trace.fermer()
 	if _quitter_a_la_fin:
 		get_tree().quit.call_deferred()
 
@@ -231,6 +245,8 @@ func remettre_au_depart() -> void:
 	entrees.reinitialiser()
 	controleur = _controleur_regle()
 	_regler_mode_piste()
+	if trace_controleur:
+		_trace.commencer(_nom_cas, controleur, modele_ideal, frequence_controle_hz)
 	_temps = 0.0
 	_t_cadence = 0.0; _t_ecoule = 0.0   # chaque essai commence de la meme facon (essais rejouables)
 	mesure.reinitialiser()
@@ -284,6 +300,7 @@ func _physics_process(dt: float) -> void:
 	bille.mettre_a_jour(dt)   # appele ici (et non dans la bille) pour garder l'ordre : commande -> mesure -> bille
 	journal.ecrire(_temps, vehicule, bille.tombee, controleur, bille.taux_bord())
 	if _banc_actif and banc.suivre(_temps, dt, vehicule, bille, controleur, _piste_generee()):
+		_trace.finir(_temps, controleur)
 		_cas_a_charger = true
 
 ## Piste generee (aleatoire ou scenario dessine) ; null pour une piste Blender (le generateur garde la derniere
@@ -298,7 +315,11 @@ func _conduire(dt: float) -> void:
 	elif mode_auto:
 		var nouvelle := vehicule.compteur_mesures != _compteur_vu   # nouvelle mesure de l'ultrason depuis le dernier tour
 		_compteur_vu = vehicule.compteur_mesures
-		var sortie: Dictionary = controleur.calculer(vehicule.sondes.duplicate(), vehicule.distance_cm, dt, nouvelle)
+		var sondes: Array = vehicule.sondes.duplicate()
+		var sondes_trace: Array = sondes.duplicate() if _trace.actif() else []
+		var sortie: Dictionary = controleur.calculer(sondes, vehicule.distance_cm, dt, nouvelle)
+		if _trace.actif():
+			_trace.tour(_temps, sondes_trace, vehicule.distance_cm, dt, nouvelle, sortie, controleur)
 		vehicule.commander(int(sortie.get("vitesse", 0)), int(sortie.get("angle", 90)))
 	else:
 		vehicule.commander(entrees.cmd_vitesse, entrees.cmd_angle)

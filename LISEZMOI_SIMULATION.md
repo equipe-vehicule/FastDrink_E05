@@ -632,7 +632,7 @@ L'erreur d'arrêt n'est plus la dernière lecture de l'ultrason (qui portait le 
 - `redemarrer_si_vitesse_impossible` (vrai) : le Kalman redémarre sur la mesure si |v| > `ReglagesRobot.vitesse_max_mm_s()` (614 mm/s, **HYPOTHÈSE**, #18) ; les obstacles sont fixes (précision du professeur), la distance ne peut pas varier plus vite que la voiture.
 - `prediction_sur_echo_manque` (faux) : un écho manqué ne touche plus l'état du Kalman (le Python fait une prédiction seule).
 
-Ces deux écarts avec `09_Code-PiCar/fastdrink/filtres/mediane_kalman.py` sont **voulus** ; le Python a le même défaut et n'est **pas corrigé** (à faire à l'étape 11).
+Ces deux écarts avec `09_Code-PiCar/fastdrink/filtres/mediane_kalman.py` sont **voulus** ; le Python avait le même défaut ; corrigé à l'étape 11 (commit d16c792).
 
 ### Erreur d'arrêt : σ_a du Kalman (graine 308842)
 
@@ -686,7 +686,7 @@ Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge m
 - Graine 269247 : bille 0,97.
 - Pistes libres, réaliste, graine 205895 : erreur d'arrêt 24,7 mm, cause non analysée.
 - Graine 47515 en idéal : BLOQUE.
-- Étape 11 : reporter les trois écarts du filtre dans `mediane_kalman.py` et `config.py`.
+- Étape 11 : trois écarts du filtre reportés dans `code_picar/fastdrink/filtres/mediane_kalman.py` et `config.py` (commit d16c792).
 
 ## Fichier unique des réglages des algorithmes (14 novembre, tâche #63, partie algorithmes)
 
@@ -699,3 +699,12 @@ Chargement : `simulation/reglages_algorithmes.gd` (seul code lié à Godot) parc
 Pour changer un réglage : modifier `reglages_algorithmes.json` (permanent) ou passer `--reglage=<module>:<clé>=<valeur>` / `reglages_essai` (un essai). Si une valeur est ajoutée dans un `.gd` (`@export var …`), il faut l'ajouter au fichier, sinon une erreur est signalée au démarrage.
 
 Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_recul 50, 40 pistes libres, scénarios) redonnent exactement les CSV de `essais/` (0 ligne différente, fichiers entiers comparés avec `diff`, aucune colonne de date ni de temps de calcul). Un `--reglage=` s'applique toujours après le fichier (`--scenarios=tous --reglage=suivi:kp=5.4` : 50 lignes différentes de la référence) ; une clé inconnue de `--reglage=` est signalée comme avant.
+
+## Trace du contrôleur pour le portage Python (14 novembre, étape 11)
+
+**Ce qui change :** option `--trace` (ou `trace_controleur` sur le nœud Simulation) et nouveau fichier `simulation/trace_controleur.gd`. À chaque tour du programme du robot (50 Hz, pas à chaque pas physique), un fichier `journaux/trace_<date>_<pid>_<cas>.jsonl` par cas reçoit en pleine précision les entrées exactes de `Controleur.calculer()` (5 sondes, distance brute avant correction, `dt`, `mesure_nouvelle`), les sorties (vitesse, angle), puis l'état, la phase, la consigne, la distance filtrée et les odométries. L'en-tête porte tous les réglages effectifs du contrôleur (après `reglages_essai`, réglages du scénario et mode de la piste) et les valeurs physiques du robot : une trace se rejoue seule. La console imprime `TRACE <chemin>`. Lecture seule : `controleur.gd` n'est pas modifié ; `simulation.gd` n'appelle la trace qu'autour de `calculer()`.
+
+**Vérification (aucun résultat ne change) :** banc de 5 pistes en modèle réaliste et 25 scénarios en modèle idéal, chacun avec `--journal`, avec et sans `--trace` : fichiers de résultats (`banc_*.csv`, `scenarios_*.csv`) et journaux détaillés (`essai_*.csv`, 76 097 et 117 888 lignes) identiques octet pour octet ; 5/5 et 25/25 OK.
+
+**Usage :** 6 traces de référence dans `code_picar/tests/traces/` (430 Ko compressées), rejouées par `code_picar/tests/test_rejeu.py` ; plan, pièges du portage (Vector2 en float32, arrondis, bibliothèque mathématique) et lots : `code_picar/PORTAGE.md`.
+

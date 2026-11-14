@@ -13,6 +13,11 @@ fastdrink/
     kalman.py            filtre de Kalman distance + vitesse (tourne sur le Pi, sans numpy)
     mediane_exp.py       médiane + exponentiel, version de référence pour la comparaison
     mediane_kalman.py    médiane de 3 + Kalman (filtre retenu ; écarts avec la simulation en en-tête)
+  conduite/              contrôleur du robot porté de la simulation Godot (étape 11, voir PORTAGE.md) :
+    godot.py             fonctions GDScript à l'identique, Vec2 (Vector2 float32)
+    reglages.py          ReglagesRobot, ReglagesEpreuve, lecture des JSON de la racine du dépôt
+    odometrie.py         odométrie (porté) ; les autres modules : PORTAGE.md
+    rejeu.py             rejeu des traces Godot (--trace) par le contrôleur Python
 essai_ultrason.py        essai du capteur sur le robot
 ultrasonic_stop_test.py  essai d'arrêt devant un obstacle (Sarah, 12 nov.)
 reset.py                 remise à zéro (venu de main)
@@ -22,7 +27,8 @@ analyse/
   analyse_filtres.py     réglage du Kalman et comparaison des filtres (sur PC, numpy + matplotlib)
   simuler_donnees.py     fichiers CSV SIMULÉS pour préparer l'analyse avant les vraies mesures
   approches_bruit_mesure.py, figures_capteur.py, xlsx_vers_csv.py   autres outils d'analyse
-tests/                   tests sur PC, sans robot
+tests/                   tests sur PC, sans robot (traces/ : traces de référence Godot ; outils/ : sonde des fonctions Godot)
+PORTAGE.md               plan du portage du contrôleur (lots, pièges, rejeu)
 ```
 
 ## Branchement du capteur (robot n° 05)

@@ -6,8 +6,10 @@
 ##
 ## Limites du vrai materiel reproduites :
 ##   - le servo tourne a vitesse finie (vitesse_servo_deg_s) : les roues n'atteignent pas l'angle tout de suite ;
-##   - le moteur a une zone morte (petites commandes sans effet) et un temps de reponse ;
-##   - l'ultrason voit un cone (pas un rayon), mesure a cadence limitee, avec du bruit ;
+##   - le moteur suit la table de vitesse (zone morte comprise, ReglagesRobot.vitesse_mm_s) et un temps de reponse ;
+##   - l'ultrason voit un cone (pas un rayon), mesure a cadence limitee, avec bruit, valeurs aberrantes, biais
+##     (gain x distance + biais) et retard pur ; l'aleatoire vient de generateurs propres au vehicule, reensemences
+##     a chaque placer() (essais rejouables) ;
 ##   - une sonde peut donner une lecture fausse (reflet, lumiere ambiante).
 class_name Vehicule
 extends AnimatableBody3D
@@ -18,12 +20,18 @@ var empattement := 0.0              # m, axe avant -> axe arriere
 var rayon_roue := 0.0               # m
 var encombrement := Vector3.ZERO    # m (largeur, hauteur, longueur) : boite de collision du vehicule
 var centre_encombrement := Vector3.ZERO  # m, centre de cette boite par rapport a l'origine du vehicule
-var vitesse_max := 0.0              # m/s atteinte a la commande 100 (= vitesse_mm_s_par_cmd x 100)
+var vitesse_max := 0.0              # m/s a la commande 100, modele lineaire (table vide) seulement
+var reglages_robot := ReglagesRobot.new()  # table de vitesse (commande -> mm/s) et dimensions du robot
 var angle_roues_max_deg := 0.0      # angle reel des roues pour un servo a 45 ou 135
 var vitesse_servo_deg_s := 0.0      # deg de servo par seconde (0 = instantane)
 var constante_temps_moteur := 0.0   # s, temps de reponse du moteur (0 = instantane)
-var zone_morte_moteur := 0          # commande minimale (valeur absolue) qui fait tourner les roues
-var bruit_ultrason_cm := 0.0        # ecart-type du bruit de l'ultrason
+var bruit_ultrason_cm := 0.0        # ecart-type du bruit de l'ultrason (cm ; cle bruit_ultrason_mm en mm)
+var proba_aberrante_ultrason := 0.0 # probabilite qu'une mesure soit aberrante (ecart de signe aleatoire)
+var aberrante_min_cm := 0.0         # amplitude minimale de l'ecart aberrant (cm)
+var aberrante_max_cm := 0.0         # amplitude maximale (cm), tirage uniforme entre les deux
+var gain_ultrason := 1.0            # mesure = gain x distance reelle (depuis la face du capteur) + biais
+var biais_ultrason_cm := 0.0        # cm
+var retard_ultrason_s := 0.0        # retard pur de la mesure livree (s)
 var portee_ultrason := 0.0          # m ; au-dela, la mesure vaut -1 (comme la bibliotheque SunFounder)
 var frequence_ultrason_hz := 0.0    # mesures par seconde (0 = a chaque pas)
 var demi_angle_ultrason_deg := 0.0  # demi-ouverture du cone de l'ultrason
@@ -36,12 +44,18 @@ func regler(r: Dictionary) -> void:
 	rayon_roue = float(r["rayon_roue_mm"]) / 1000.0
 	encombrement = Vector3(float(r["largeur_mm"]), float(r["hauteur_mm"]), float(r["longueur_mm"])) / 1000.0
 	centre_encombrement = Vector3(0.0, float(r["centre_encombrement_y_mm"]), float(r["centre_encombrement_z_mm"])) / 1000.0
-	vitesse_max = float(r["vitesse_mm_s_par_cmd"]) * 100.0 / 1000.0
+	reglages_robot.appliquer(r)
+	vitesse_max = reglages_robot.vitesse_mm_s(100.0) / 1000.0   # utilise seulement si la table est vide (lineaire)
 	angle_roues_max_deg = float(r["angle_roues_max_deg"])
 	vitesse_servo_deg_s = float(r["vitesse_servo_deg_s"])
 	constante_temps_moteur = float(r["constante_temps_moteur_s"])
-	zone_morte_moteur = int(r["zone_morte_moteur_cmd"])
-	bruit_ultrason_cm = float(r["bruit_ultrason_cm"])
+	bruit_ultrason_cm = float(r["bruit_ultrason_mm"]) / 10.0
+	proba_aberrante_ultrason = float(r["proba_aberrante_ultrason"])
+	aberrante_min_cm = float(r["aberrante_ultrason_mm"][0]) / 10.0
+	aberrante_max_cm = float(r["aberrante_ultrason_mm"][1]) / 10.0
+	gain_ultrason = float(r["gain_ultrason"])
+	biais_ultrason_cm = float(r["biais_ultrason_mm"]) / 10.0
+	retard_ultrason_s = float(r["retard_ultrason_s"])
 	portee_ultrason = float(r["portee_ultrason_m"])
 	frequence_ultrason_hz = float(r["frequence_ultrason_hz"])
 	demi_angle_ultrason_deg = float(r["demi_angle_ultrason_deg"])
@@ -56,7 +70,12 @@ var vitesse := 0.0                       # m/s reelle simulee
 var acceleration := 0.0                  # m/s^2 instantanee
 var distance_parcourue := 0.0            # m
 var sondes := [0, 0, 0, 0, 0]
-var distance_cm := -1.0
+var distance_cm := -1.0                  # derniere mesure livree (cm, -1 = pas d'echo) ; garde entre deux mesures
+## Nombre de mesures livrees depuis placer() : le programme du robot compare a la valeur vue au tour precedent pour
+## savoir si distance_cm est NOUVELLE (il tourne a 50 Hz, le capteur a ~16 Hz).
+var compteur_mesures := 0
+## Graine de l'aleatoire de ce cas (bruit, aberrantes, sondes fausses) : fixee par qui lance le cas, utilisee par placer().
+var graine_aleatoire := 0
 var en_collision := false
 var consigne_essai := -1.0               # m/s ; >= 0 : remplace la commande (bancs d'essai uniquement)
 
@@ -64,6 +83,10 @@ var _modele: Node3D
 var _rayons_sondes: Array = []           # 5 sondes x 5 rayons (centre + 4 autour)
 var _rayons_ultrason: Array = []         # cone : axe + 2 rayons a +/- demi_angle_ultrason_deg
 var _t_ultrason := 0.0
+var _temps := 0.0                        # s depuis placer() (horloge du retard de l'ultrason)
+var _en_transit: Array = []              # mesures prises mais pas encore livrees : [[instant de livraison, cm]]
+var _alea_ultrason := RandomNumberGenerator.new()
+var _alea_sondes := RandomNumberGenerator.new()
 var _requete_collision: PhysicsShapeQueryParameters3D
 var _roues := {}
 var _rotation_roues := 0.0
@@ -143,6 +166,11 @@ func placer(t: Transform3D) -> void:
 	distance_cm = -1.0
 	en_collision = false
 	_t_ultrason = 0.0
+	_temps = 0.0
+	_en_transit.clear()
+	compteur_mesures = 0
+	_alea_ultrason.seed = graine_aleatoire
+	_alea_sondes.seed = graine_aleatoire * 2 + 1
 
 ## Applique les commandes (bornees comme sur le vrai robot).
 func commander(vitesse_cmd: int, servo: int) -> void:
@@ -178,8 +206,10 @@ func _physics_process(dt: float) -> void:
 	else:
 		angle_servo_reel = move_toward(angle_servo_reel, float(angle_servo), vitesse_servo_deg_s * dt)
 	# Vitesse : zone morte, puis premier ordre vers la consigne
-	var cmd := commande_vitesse if absi(commande_vitesse) >= zone_morte_moteur else 0
-	var cible := cmd / 100.0 * vitesse_max
+	# Vitesse cible : table de vitesse (zone morte comprise) ; table vide = proportionnelle (modele ideal, inchange)
+	var cible := commande_vitesse / 100.0 * vitesse_max
+	if not reglages_robot.est_lineaire():
+		cible = reglages_robot.vitesse_mm_s(float(commande_vitesse)) / 1000.0
 	if consigne_essai >= 0.0:
 		cible = consigne_essai
 	var v_prec := vitesse
@@ -215,27 +245,41 @@ func _lire_capteurs(dt: float) -> void:
 		for r in _rayons_sondes[i]:
 			(r as RayCast3D).force_raycast_update()
 			if (r as RayCast3D).is_colliding(): vu = 1
-		if proba_erreur_sonde > 0.0 and randf() < proba_erreur_sonde:
+		if proba_erreur_sonde > 0.0 and _alea_sondes.randf() < proba_erreur_sonde:
 			vu = 1 - vu
 		sondes[i] = vu
 	_t_ultrason += dt
+	_temps += dt
+	# La periode reelle est un multiple du pas physique : 62,5 ms a 1/240 s (bancs), 66,7 ms a 1/60 s (vitesse_temps 4)
 	if frequence_ultrason_hz <= 0.0 or _t_ultrason >= 1.0 / frequence_ultrason_hz:
 		_t_ultrason = 0.0
-		_mesurer_ultrason()
+		_en_transit.push_back([_temps + retard_ultrason_s, _mesurer_ultrason()])
+	# Retard pur : la mesure livree a l'instant t est celle prise a t - retard (sans retard, livree aussitot)
+	while not _en_transit.is_empty() and _en_transit[0][0] <= _temps:
+		distance_cm = _en_transit.pop_front()[1]
+		compteur_mesures += 1
 	_requete_collision.transform = global_transform * Transform3D(Basis(), centre_encombrement)
 	en_collision = not get_world_3d().direct_space_state.intersect_shape(_requete_collision, 1).is_empty()
 
-# Entre deux mesures, distance_cm garde la valeur precedente (comme une lecture du vrai capteur).
-func _mesurer_ultrason() -> void:
+# Prend une mesure (cm, -1 = pas d'echo) : distance reelle depuis la face du capteur, puis biais (gain x d + biais),
+# bruit gaussien, valeur aberrante rare. Livree par _lire_capteurs apres retard_ultrason_s ; entre deux mesures,
+# distance_cm garde la valeur precedente (comme une lecture du vrai capteur).
+func _mesurer_ultrason() -> float:
 	var d := -1.0
 	for r in _rayons_ultrason:
 		(r as RayCast3D).force_raycast_update()
 		if (r as RayCast3D).is_colliding():
 			var di := (r as RayCast3D).global_position.distance_to((r as RayCast3D).get_collision_point()) * 100.0
 			if d < 0.0 or di < d: d = di
-	if d >= 0.0 and bruit_ultrason_cm > 0.0:
-		d += randfn(0.0, bruit_ultrason_cm)
-	distance_cm = d
+	if d >= 0.0:
+		d = gain_ultrason * d + biais_ultrason_cm
+		if bruit_ultrason_cm > 0.0:
+			d += _alea_ultrason.randfn(0.0, bruit_ultrason_cm)
+		if proba_aberrante_ultrason > 0.0 and _alea_ultrason.randf() < proba_aberrante_ultrason:
+			var ecart := _alea_ultrason.randf_range(aberrante_min_cm, aberrante_max_cm)
+			d += ecart if _alea_ultrason.randf() < 0.5 else -ecart
+		d = maxf(d, 0.0)   # une distance mesuree n'est jamais negative (-1 = pas d'echo)
+	return d
 
 ## Point ou poser la bille : centre du fond de la cuvette (repere monde).
 func position_bille(rayon_bille: float) -> Vector3:

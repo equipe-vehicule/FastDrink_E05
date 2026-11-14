@@ -33,16 +33,16 @@ var reprise_avant_fin_mm := 225.0  # le PID reprend des que les sondes voient la
 								   # 0 (attendre la fin) : sur une piste aleatoire, la ligne tournait avant la fin du retour
 								   # et etait perdue ; 225 teste sans chute de bille (pistes 4 et 7)
 ## Vitesse : la plus grande qui garde l'acceleration laterale v^2 / R sous acceleration_laterale_max, plafonnee.
-## 0,3 m/s^2 : sous la rampe d'acceleration utilisee en ligne droite (125 cmd/s, soit 0,5 m/s^2), car la bille subit
+## 0,3 m/s^2 : sous la deceleration de freinage utilisee en ligne droite (500 mm/s^2, soit 0,5 m/s^2), car la bille subit
 ## aussi les a-coups du braquage.
 var acceleration_laterale_max := 0.3   # m/s^2
-var vitesse_max := 65                  # commande (65 sans chute de bille au banc du 12 nov.)
+var vitesse_max_mm_s := 260.0          # (= ancienne commande 65 a 4 mm/s par commande ; sans chute de bille au banc du 12 nov.)
 
 var cote := 1
 var termine := false
 var fin_sans_ligne := false        # diagnostic : fin du retour sans avoir revu la ligne (cote devine)
 var e_reprise := 0.0
-var vitesse := 65                  # commande choisie pour la manoeuvre en cours
+var vitesse_mm_s := 260.0          # vitesse choisie pour la manoeuvre en cours (mm/s)
 var rayon_choisi_mm := 0.0         # journal / banc d'essai
 
 var _robot: ReglagesRobot
@@ -77,8 +77,10 @@ func choisir(d_capteur_mm: float, cote_voulu: int, x0_mm := 0.0, cap0 := 0.0) ->
 		if _trajectoire_libre():
 			rayon_choisi_mm = r
 			var r_min_m := minf(r, _rayon_retour_mm()) / 1000.0
-			var v_cmd := sqrt(acceleration_laterale_max * r_min_m) * 1000.0 / _robot.mm_s_par_cmd
-			vitesse = mini(vitesse_max, int(v_cmd))
+			var v_voulue := sqrt(acceleration_laterale_max * r_min_m) * 1000.0   # mm/s
+			# Vitesse atteignable par une commande ENTIERE (la commande du robot est un entier) : arrondie vers le bas
+			var cmd_entiere := floorf(_robot.commande_pour_vitesse(v_voulue))
+			vitesse_mm_s = minf(vitesse_max_mm_s, _robot.vitesse_mm_s(cmd_entiere))
 			return true
 	rayon_choisi_mm = 0.0
 	return false
@@ -150,7 +152,7 @@ func calculer(somme: float, n: int) -> Vector2:
 	if n > 0 and y >= _y3 - reprise_avant_fin_mm:
 		e_reprise = somme / n
 		termine = true
-		return Vector2(90.0, float(vitesse))
+		return Vector2(90.0, vitesse_mm_s)
 	if y >= _y3 + 150.0:
 		# Ligne non revue : elle est du cote oppose a la position laterale de la voiture (x = 0 sur la ligne).
 		# Avant : toujours -cote, faux si la voiture a deja croise la ligne (elle braquait alors a fond du mauvais cote).
@@ -158,7 +160,7 @@ func calculer(somme: float, n: int) -> Vector2:
 		e_reprise = signe * SuiviLigne.ERREUR_MAX_MM
 		fin_sans_ligne = true
 		termine = true
-		return Vector2(90.0, float(vitesse))
+		return Vector2(90.0, vitesse_mm_s)
 	# Pure pursuit : courbure = 2 * ecart lateral / distance^2 vers le point vise
 	var yt := y + anticipation_mm
 	var v := Vector2(x_chemin(yt), yt) - Vector2(_odo.x, _odo.y)
@@ -167,4 +169,4 @@ func calculer(somme: float, n: int) -> Vector2:
 	var av := v.x * sin(c) + v.y * cos(c)
 	var kappa := 2.0 * lat / maxf(lat * lat + av * av, 1.0)
 	var delta := rad_to_deg(atan(_robot.empattement_mm * kappa))
-	return Vector2(90.0 + clampf(_robot.roues_vers_servo(delta), -45.0, 45.0), float(vitesse))
+	return Vector2(90.0 + clampf(_robot.roues_vers_servo(delta), -45.0, 45.0), vitesse_mm_s)

@@ -6,7 +6,7 @@ extends RefCounted
 
 var duree_avant_s := 1.0             # duree de chaque marche avant (braquage maximal)
 var duree_arriere_s := 1.0           # duree de chaque marche arriere (braquage oppose)
-var vitesse := 18
+var vitesse_mm_s := 72.0    # (= ancienne commande 18 a 4 mm/s par commande)
 var duree_max_s := 20.0
 
 var termine := false
@@ -32,5 +32,5 @@ func calculer(n: int, cap: float, t_etat: float) -> Vector2:
 		return Vector2(90.0, 0.0)
 	var periode := duree_avant_s + duree_arriere_s
 	if fmod(t_etat, periode) < duree_avant_s:
-		return Vector2(90.0 + 45.0 * _cote, float(vitesse))
-	return Vector2(90.0 - 45.0 * _cote, -float(vitesse))
+		return Vector2(90.0 + 45.0 * _cote, vitesse_mm_s)
+	return Vector2(90.0 - 45.0 * _cote, -vitesse_mm_s)

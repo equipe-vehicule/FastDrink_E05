@@ -18,16 +18,20 @@ const Scenarios := preload("res://simulation/scenarios.gd")
 @export var parametres_piste: ParametresPiste ## reglages de la piste aleatoire (vide = valeurs par defaut)
 ## Demarre le journal CSV des le lancement (essais automatiques, sans appuyer sur L).
 @export var journal_au_demarrage := false
-## Essais : reglages appliques a chaque depart, ex. {"suivi:vitesse_max": 55, "robot:vitesse_servo_deg_s": 200}.
+## Essais : reglages appliques a chaque depart, ex. {"suivi:vitesse_max_mm_s": 220, "robot:vitesse_servo_deg_s": 200}.
 ##   "<module>:<reglage>" : reglage du controleur ; "<reglage>" seul : reglage du controleur lui-meme
 ##       (ex. "recul_fin_ligne_mm") ;
 ##   "robot:<cle de reglages_robot.json>" : valeur du robot, pour le modele ET le controleur (lue au lancement).
-##   "robot:<champ de ReglagesRobot>" hors du fichier : reglage du controleur seulement (ex. "robot:rampe_montee_cmd_par_s",
-##       "robot:rampe_freinage_cmd_par_s").
+##   "robot:<champ de ReglagesRobot>" hors du fichier : reglage du controleur seulement (ex. "robot:acceleration_montee_mm_s2",
+##       "robot:deceleration_freinage_mm_s2").
 @export var reglages_essai: Dictionary = {}
 ## Banc d'essai : nombre de pistes aleatoires a enchainer automatiquement (0 = desactive). Resultats : journaux/banc_*.csv
 @export var banc_essai_pistes := 0
 @export var banc_graine_depart := 1
+## Modele IDEAL du robot (comme avant l'etape 9) : mesures sans bruit ni biais ni retard, vitesse lineaire, filtre
+## « mediane3 » (valeurs : FichierReglages.VALEURS_IDEALES). Faux = modele realiste de reglages_robot.json.
+## Ligne de commande : --modele=ideal ou --modele=realiste.
+@export var modele_ideal := false
 ## Acceleration du temps (essais). ATTENTION : Engine.time_scale agrandit aussi le pas de la physique
 ## (4 -> pas de 1/60 s au lieu de 1/240 s) : les resultats changent un peu avec cette valeur.
 @export var vitesse_temps := 1.0
@@ -55,6 +59,9 @@ var _scenarios_demandes := ""         # --scenarios= : "tous" ou "nom1,nom2"
 var _banc_actif := false
 var _cas_a_charger := false           # banc : charger le cas suivant au debut du prochain pas physique
 var _reglages_cas: Dictionary = {}    # reglages_essai propres au scenario en cours (ajoutes a reglages_essai)
+var _graine_cas := 0                  # graine de l'aleatoire du cas en cours (bruit de l'ultrason) : graine de la piste,
+                                      # ou hash du nom du scenario ; 0 hors banc
+var _compteur_vu := 0                 # vehicule.compteur_mesures au dernier tour du programme du robot
 
 func _ready() -> void:
 	# Par defaut Godot fait au plus 8 pas physiques par image : a 240 pas/s, sous 30 images/s, le temps ralentit
@@ -92,7 +99,7 @@ func _ready() -> void:
 
 ## Valeurs du robot : reglages_robot.json, puis les cles "robot:<cle>" de reglages_essai (essais sans toucher au fichier).
 func _lire_reglages_robot() -> void:
-	reglages_robot = FichierReglages.lire()
+	reglages_robot = FichierReglages.lire(FichierReglages.CHEMIN, modele_ideal)
 	for chemin in reglages_essai:
 		var texte := String(chemin)
 		if not texte.begins_with("robot:"):
@@ -100,7 +107,7 @@ func _lire_reglages_robot() -> void:
 		var cle := texte.trim_prefix("robot:")
 		if reglages_robot.has(cle):
 			reglages_robot[cle] = reglages_essai[chemin]
-		# sinon : champ de ReglagesRobot hors du fichier (ex. robot:rampe_montee_cmd_par_s), applique par _controleur_regle
+		# sinon : champ de ReglagesRobot hors du fichier (ex. robot:acceleration_montee_mm_s2), applique par _controleur_regle
 	frequence_controle_hz = float(reglages_robot.get("frequence_controle_hz", 0.0))
 
 ## Le fichier de reglages et le modele 3D (positions des pieces dans picar.glb) doivent decrire le meme robot :
@@ -128,6 +135,7 @@ func _verifier_coherence() -> void:
 ##   --scenarios=tous ou --scenarios=nom1,nom2 : scenarios de simulation/scenarios.gd au lieu des pistes aleatoires ;
 ##   --reglage=<chemin>=<valeur> (repetable) : ajoute a reglages_essai, ex. --reglage=suivi:kp=5.4.
 ##   --parametre-piste=<nom>=<valeur> (repetable) : reglage de la piste aleatoire, ex. --parametre-piste=faces_aleatoires=false.
+##   --modele=ideal : comme modele_ideal (modele ideal du robot ; --modele=realiste : modele realiste, defaut).
 ##   --journal : comme journal_au_demarrage (journal detaille de chaque piste).
 func _lire_ligne_de_commande() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -147,6 +155,7 @@ func _lire_ligne_de_commande() -> void:
 				pistes.parametres.set(nom, str_to_var(texte.get_slice("=", 1)))
 			else:
 				push_error("--parametre-piste : « %s » n'existe pas dans ParametresPiste." % nom)
+		elif arg.begins_with("--modele="): modele_ideal = arg.get_slice("=", 1) == "ideal"
 		elif arg == "--journal": journal_au_demarrage = true   # journal detaille journaux/essai_*.csv
 		elif arg == "--quitter": _quitter_a_la_fin = true
 
@@ -160,7 +169,9 @@ func _brancher_signaux() -> void:
 	bille.chute.connect(func(): print("BILLE TOMBEE a t = %.2f s (acceleration max atteinte %.2f m/s2)" % [_temps, mesure.maximum]))
 
 ## Les reglages propres a un scenario (_reglages_cas) sont remis a zero par qui charge une autre piste.
-func charger_piste(i: int, graine := 0) -> void:
+## graine_alea : graine de l'aleatoire des mesures (-1 = la graine de la piste).
+func charger_piste(i: int, graine := 0, graine_alea := -1) -> void:
+	_graine_cas = graine if graine_alea < 0 else graine_alea
 	pistes.place_avant_obstacle = _controleur_regle().place_avant_obstacle_mm() / 1000.0
 	pistes.charger(i, graine)
 	journal.nouvelle_piste(pistes.actuelle)   # sans effet si le journal est arrete
@@ -195,9 +206,11 @@ func charger_scenario(desc: Dictionary) -> bool:
 			push_error("Scenario %s : « %s » interdit dans un scenario (valeurs du robot lues au lancement seulement)." % [desc["nom"], chemin])
 		else:
 			_reglages_cas[chemin] = r[chemin]
+	var graine_alea := String(desc["nom"]).hash()   # graine fixe derivee du nom du scenario
 	if desc.has("piste"):   # piste Blender (Pistes.LISTE), avec les reglages du scenario
-		charger_piste(int(desc["piste"]))
+		charger_piste(int(desc["piste"]), 0, graine_alea)
 		return true
+	_graine_cas = graine_alea
 	pistes.place_avant_obstacle = _controleur_regle().place_avant_obstacle_mm() / 1000.0
 	if not pistes.charger_scenario(desc):
 		return false
@@ -206,7 +219,9 @@ func charger_scenario(desc: Dictionary) -> bool:
 	return true
 
 func remettre_au_depart() -> void:
+	vehicule.graine_aleatoire = _graine_cas
 	vehicule.placer(pistes.transform_depart())
+	_compteur_vu = 0
 	vehicule.commander(0, 90)
 	entrees.reinitialiser()
 	controleur = _controleur_regle()
@@ -274,7 +289,9 @@ func _conduire(dt: float) -> void:
 	if not bille.est_prete():
 		vehicule.commander(0, 90)
 	elif mode_auto:
-		var sortie: Dictionary = controleur.calculer(vehicule.sondes.duplicate(), vehicule.distance_cm, dt)
+		var nouvelle := vehicule.compteur_mesures != _compteur_vu   # nouvelle mesure de l'ultrason depuis le dernier tour
+		_compteur_vu = vehicule.compteur_mesures
+		var sortie: Dictionary = controleur.calculer(vehicule.sondes.duplicate(), vehicule.distance_cm, dt, nouvelle)
 		vehicule.commander(int(sortie.get("vitesse", 0)), int(sortie.get("angle", 90)))
 	else:
 		vehicule.commander(entrees.cmd_vitesse, entrees.cmd_angle)

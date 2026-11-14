@@ -12,7 +12,7 @@ var approche_max_s := 15.0           # ensuite, ou une fois la cible atteinte : 
 var avance_cible_mm := 200.0         # la cible est devant le dernier point vu, dans le sens de marche : jamais en arriere
 var rayon_cible_mm := 80.0           # cible consideree comme atteinte
 var spirale_s := 8.0                 # plus grand = la spirale s'ouvre plus lentement
-var vitesse := 18
+var vitesse_mm_s := 72.0    # (= ancienne commande 18 a 4 mm/s par commande)
 var gain := 2.0                      # degres de roue par degre d'ecart de direction
 var rayon_obstacle_recent_mm := 400.0  # si pres de l'obstacle evite, on s'en ecarte d'abord
 
@@ -54,12 +54,12 @@ func conduire(obstacle_recent: Vector2, t_etat: float, dt: float) -> Vector2:
 		var vers_obstacle := obstacle_recent - ici
 		var rel_obstacle := wrapf(atan2(vers_obstacle.x, vers_obstacle.y) - _odo.cap_global, -PI, PI)
 		if absf(rel_obstacle) < deg_to_rad(100.0):
-			return Vector2(90.0 - 45.0 * signf(rel_obstacle), float(vitesse))
+			return Vector2(90.0 - 45.0 * signf(rel_obstacle), vitesse_mm_s)
 	if _t_spirale < 0.0 and (vers.length() < rayon_cible_mm or t_etat > approche_max_s):
 		_t_spirale = 0.0
 		_cote_spirale = 1 if rel >= 0.0 else -1
 	if _t_spirale >= 0.0:
 		_t_spirale += dt
-		return Vector2(90.0 + _cote_spirale * 45.0 / (1.0 + _t_spirale / spirale_s), float(vitesse))
+		return Vector2(90.0 + _cote_spirale * 45.0 / (1.0 + _t_spirale / spirale_s), vitesse_mm_s)
 	var servo := _robot.roues_vers_servo(rad_to_deg(rel) * gain)
-	return Vector2(90.0 + clampf(servo, -45.0, 45.0), float(vitesse))
+	return Vector2(90.0 + clampf(servo, -45.0, 45.0), vitesse_mm_s)

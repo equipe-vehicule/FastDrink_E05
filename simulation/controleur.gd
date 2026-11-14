@@ -45,6 +45,8 @@ enum Etat { SUIVI, DECISION, BLOQUE, ARRET, CONTOURNEMENT, RECUL_LIGNE, DEMI_TOU
 ## Etats apres lesquels le suivi reprend en douceur (RepriseDouce).
 const ETATS_MANOEUVRE := [Etat.CONTOURNEMENT, Etat.CONTOURNEMENT_FLUIDE, Etat.RATTRAPAGE, Etat.DEMI_TOUR, Etat.RETROUVER]
 const TIMEOUT_ETAT_S := 10.0         # securite : une phase de manoeuvre ne dure jamais plus longtemps
+const SEUIL_MARCHE_MM_S := 4.0       # roule au-dela de cette vitesse (= 1 commande a 4 mm/s par commande)
+const SEUIL_ARRET_MM_S := 2.0        # arretee sous cette vitesse (= 0,5 commande a 4 mm/s par commande)
 const LISSAGE_BRAQUAGE_S := 0.5      # constante de temps du braquage moyen (detection en virage, choix du cote)
 
 # ----- Reglages propres au controleur
@@ -60,7 +62,7 @@ var robot := ReglagesRobot.new()
 var epreuve := ReglagesEpreuve.new()
 var odo := Odometrie.new(robot)
 var suivi := SuiviLigne.new()
-var ultrason := FiltreUltrason.new()
+var ultrason := FiltreUltrason.new(robot)
 var arret := ArretObstacle.new(robot)
 var contournement := Contournement.new(robot, odo, epreuve)
 var fluide := ContournementFluide.new(robot, odo, epreuve)
@@ -80,7 +82,7 @@ var raisons_repli := {}
 var _etat := Etat.SUIVI
 var _t_etat := 0.0
 var _t_arret := 0.0
-var _cmd := 0.0                      # commande de vitesse actuelle (apres rampe)
+var _v_mm_s := 0.0                   # vitesse de consigne actuelle (mm/s, apres rampe) ; la commande en sort par la table
 var _braquage_moyen := 0.0           # servo - 90, moyenne glissante pendant le suivi (> 0 = virage a droite)
 var _evitement_hors_ligne := false   # la prochaine DECISION lance un evitement hors ligne
 var _n_echos_hors_ligne := 0
@@ -92,12 +94,14 @@ var _t_pause := 0.0
 # =====================================================================================================================
 # Pas de controle
 
-func calculer(sondes: Array, distance_cm: float, dt: float) -> Dictionary:
+## mesure_nouvelle : vrai si distance_cm est une mesure arrivee depuis le tour precedent (le filtre « mediane_kalman »
+## n'est mis a jour qu'a ce moment-la ; « mediane3 » l'ignore).
+func calculer(sondes: Array, distance_cm: float, dt: float, mesure_nouvelle := true) -> Dictionary:
 	dt = maxf(dt, 0.001)
 	var ligne := SuiviLigne.lire(sondes)
 	var somme := ligne.x
 	var n := int(ligne.y)
-	var d_mm := ultrason.filtrer(distance_cm, dt)
+	var d_mm := ultrason.filtrer(distance_cm, dt, mesure_nouvelle)
 	distance_filtree_mm = d_mm
 	_verifier_duree_manoeuvre()
 	var r := _commande_selon_etat(sondes, somme, n, d_mm, distance_cm, dt)
@@ -131,7 +135,7 @@ func _commande_selon_etat(sondes: Array, somme: float, n: int, d_mm: float, dist
 				_changer_etat(Etat.SUIVI)
 			return r
 		Etat.RATTRAPAGE:
-			var r := rattrapage.calculer(sondes, somme, n, _cmd, _t_etat, dt)
+			var r := rattrapage.calculer(sondes, somme, n, _v_mm_s, _t_etat, dt)
 			if rattrapage.termine:
 				_changer_etat(Etat.SUIVI)
 			return r
@@ -142,7 +146,7 @@ func _commande_selon_etat(sondes: Array, somme: float, n: int, d_mm: float, dist
 		Etat.RECUL_OBSTACLE:
 			return _etat_recul_obstacle(somme, n, d_mm, dt)
 		Etat.RECUL_LIGNE:
-			var r := recul.calculer(somme, n, dt, _cmd)
+			var r := recul.calculer(somme, n, dt, _v_mm_s)
 			if recul.fin == ReculLigne.Fin.TERMINE:
 				_changer_etat(Etat.SUIVI if recul.reprendre_apres_recul else Etat.ARRET)
 			elif recul.fin == ReculLigne.Fin.LIGNE_PERDUE:
@@ -168,31 +172,44 @@ func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, d
 		cible = reprise.limiter_vitesse(cible)
 		angle = reprise.limiter_angle(angle, dt)
 	reprise.memoriser_angle(angle)
-	var rampe := robot.rampe_freinage_cmd_par_s
-	# Changement de sens (cible * _cmd < 0) : rampe de freinage, choix volontaire
-	if robot.rampe_montee_cmd_par_s > 0.0 and absf(cible) > absf(_cmd) and cible * _cmd >= 0.0:
-		rampe = robot.rampe_montee_cmd_par_s   # acceleration (en avant ou en arriere)
-	_cmd = move_toward(_cmd, cible, rampe * dt)
+	var acceleration := robot.deceleration_freinage_mm_s2
+	# Changement de sens (cible * _v_mm_s < 0) : deceleration de freinage, choix volontaire
+	if robot.acceleration_montee_mm_s2 > 0.0 and absf(cible) > absf(_v_mm_s) and cible * _v_mm_s >= 0.0:
+		acceleration = robot.acceleration_montee_mm_s2   # acceleration (en avant ou en arriere)
+	_v_mm_s = move_toward(_v_mm_s, cible, acceleration * dt)
+	var cmd := _commande_envoyee()                         # commande entiere reellement envoyee (zone morte comprise) ; meme valeur pour l'odometrie
 	var angle_servo := int(round(angle))
 	odo.suivre_servo(float(angle_servo), dt)              # toujours : angle reel du servo connu au debut d'une manoeuvre
-	odo.integrer_global(_cmd * robot.mm_s_par_cmd, dt)    # toujours : position globale (sens de marche)
+	odo.integrer_global(robot.vitesse_odometrie_mm_s(cmd), dt)    # toujours : position globale (sens de marche)
 	var a_contresens := _surveiller_sens(somme, n, dt)
 	if n > 0 and not a_contresens and (_etat == Etat.SUIVI or _ligne_de_sortie_visible()):
 		memoire.memoriser(somme / n)
 	if _en_manoeuvre():
-		odo.integrer(_cmd * robot.mm_s_par_cmd, dt)
-	if _etat == Etat.SUIVI and absf(_cmd) > 1.0:
+		odo.integrer(robot.vitesse_odometrie_mm_s(cmd), dt)
+	if _etat == Etat.SUIVI and absf(_v_mm_s) > SEUIL_MARCHE_MM_S:
 		_braquage_moyen = lerpf(_braquage_moyen, angle_servo - 90.0, minf(1.0, dt / LISSAGE_BRAQUAGE_S))
-	return {"vitesse": int(round(_cmd)), "angle": angle_servo}
+	return {"vitesse": int(round(cmd)), "angle": angle_servo}
+
+
+## Commande que le vehicule recoit (entiere : il fait int(round(cmd))). Modele reel : arrondie ici, avant l'odometrie.
+## Modele ideal (table lineaire) : laissee flottante pour l'odometrie, afin de garder les resultats de reference identiques.
+func _commande_envoyee() -> float:
+	var c := robot.commande_pour_vitesse(_v_mm_s)
+	return c if robot.est_lineaire() else roundf(c)
+
+
+## Vitesse (mm/s) que l'odometrie croit, pour la commande qui part vers le robot (table du moteur, zone morte comprise).
+func _vitesse_odometrie_mm_s() -> float:
+	return robot.vitesse_odometrie_mm_s(_commande_envoyee())
 
 
 ## En suivi : vrai si la voiture remonte un morceau de ligne deja parcouru. Au-dela de contresens_max_mm : demi-tour,
 ## quelle que soit la raison pour laquelle la voiture s'est retournee.
 func _surveiller_sens(somme: float, n: int, dt: float) -> bool:
-	if not (n > 0 and n <= 3 and _etat == Etat.SUIVI and _cmd > 1.0):
+	if not (n > 0 and n <= 3 and _etat == Etat.SUIVI and _v_mm_s > SEUIL_MARCHE_MM_S):
 		return false
 	var a_contresens := memoire.remonte_le_chemin(somme / n)
-	var pas_mm := _cmd * robot.mm_s_par_cmd * dt
+	var pas_mm := _vitesse_odometrie_mm_s() * dt
 	_contresens_mm = _contresens_mm + pas_mm if a_contresens else maxf(0.0, _contresens_mm - pas_mm)
 	if _contresens_mm >= contresens_max_mm and memoire.demi_tour_autorise():
 		_contresens_mm = 0.0
@@ -216,7 +233,7 @@ func _etat_suivi(sondes: Array, d_mm: float, dt: float) -> Vector2:
 	rattrapage.observer(dt)
 	# Piste Recul : fin de la ligne -> arret, puis recul en suivant la ligne (les sondes la retrouvent en reculant)
 	if recul_fin_ligne_mm > 0.0 and rattrapage.ligne_perdue():
-		if absf(_cmd) < 0.5:
+		if absf(_v_mm_s) < SEUIL_ARRET_MM_S:
 			demarrer_recul(recul_fin_ligne_mm, 3.0)
 			recul_fin_ligne_mm = 0.0
 		return Vector2(90.0, 0.0)
@@ -248,7 +265,7 @@ func _approche_obstacle(angle: float, cible: float, d_mm: float, dt: float) -> V
 		suivi.geler()                     # pas d'accumulation pendant l'arret
 	if cible < 0.0:
 		angle = 90.0                      # recul en ligne droite (arret trop pres)
-	var immobile := arret.arrete and absf(_cmd) < 0.5
+	var immobile := arret.arrete and absf(_v_mm_s) < SEUIL_ARRET_MM_S
 	_t_arret = _t_arret + dt if immobile else 0.0
 	if contourner and immobile:
 		_evitement_hors_ligne = hors_ligne
@@ -275,12 +292,12 @@ func _etat_decision(somme: float, n: int, d_mm: float) -> void:
 ## Ligne perdue pendant le recul : ReculLigne finit la distance tout droit (voir ReculLigne.finir_sans_ligne).
 func _etat_recul_obstacle(somme: float, n: int, d_mm: float, dt: float) -> Vector2:
 	if not _recul_fini:
-		var r := recul.calculer(somme, n, dt, _cmd)
+		var r := recul.calculer(somme, n, dt, _v_mm_s)
 		if recul.fin == ReculLigne.Fin.EN_COURS:
 			return r
 		_recul_fini = true
 		_t_pause = 0.0
-	if absf(_cmd) < 0.5:
+	if absf(_v_mm_s) < SEUIL_ARRET_MM_S:
 		_t_pause += dt
 	if _t_pause >= epreuve.pause_avant_contournement_s:
 		var d_devant := d_mm if d_mm >= 0.0 else epreuve.distance_arret_mm + robot.ultrason_avant_mm + odo.parcours
@@ -291,7 +308,7 @@ func _etat_recul_obstacle(somme: float, n: int, d_mm: float, dt: float) -> Vecto
 func _etat_contournement(somme: float, n: int, d_mm: float, distance_cm: float, dt: float) -> Vector2:
 	var phase_avant := contournement.phase
 	var d_brut := distance_cm * 10.0 if distance_cm >= 0.0 else -1.0   # non filtre : pour confirmer un echo
-	var r := contournement.calculer(somme, n, _cmd * robot.mm_s_par_cmd, d_mm, d_brut, dt)
+	var r := contournement.calculer(somme, n, _vitesse_odometrie_mm_s(), d_mm, d_brut, dt)
 	if contournement.termine:
 		suivi.derniere_erreur = contournement.ecart_ligne_mm()
 		if contournement.hors_ligne and n == 0 and not memoire.ligne.is_empty():
@@ -530,7 +547,7 @@ func reprendre() -> void:
 
 ## Remet le controleur a zero (nouveau depart, sortie de BLOQUE).
 func reinitialiser() -> void:
-	_cmd = 0.0
+	_v_mm_s = 0.0
 	_braquage_moyen = 0.0
 	suivi.derniere_erreur = 0.0
 	ultrason.reinitialiser()

@@ -56,7 +56,7 @@ var actif := true                 # false = on s'arrete devant l'obstacle (test 
 var cote_par_defaut := 1          # 1 = par la droite, -1 = par la gauche (en ligne droite)
 var cote_interieur_virage := true # en virage, passer par l'interieur (la ligne revient vers la voiture)
 var seuil_virage_deg := 8.0       # braquage moyen (servo, par rapport a 90) au-dessus duquel on est en virage
-var vitesse_manoeuvre := 25       # Banc d'essai du 12 nov. : a 40, la bille tombait dans 4 pistes sur 6 (braquage par paliers) ; 25 = valeur d'origine
+var vitesse_manoeuvre_mm_s := 100.0  # (= ancienne commande 25 a 4 mm/s par commande) Banc d'essai du 12 nov. : a la commande 40, la bille tombait dans 4 pistes sur 6 (braquage par paliers) ; 25 = valeur d'origine
 ## Hors de la ligne seulement (evitement) : distance d'arret avant d'eviter un obstacle.
 ## Sur la ligne, la sequence arret / recul / contournement utilise ReglagesEpreuve.
 var distance_manoeuvre_cm := 30.0
@@ -191,7 +191,7 @@ func _manoeuvre_libre(cap_deg: float, d0_mm: float, marge_mm: float) -> bool:
 	var face := d0_mm + _robot.longueur_avant_mm
 	var obs_min := Vector2(-demi, face - marge_mm)
 	var obs_max := Vector2(demi, face + _longueur_obstacle() + marge_mm)
-	var v := vitesse_manoeuvre * _robot.mm_s_par_cmd
+	var v := vitesse_manoeuvre_mm_s
 	var dt := 1.0 / _robot.frequence_controle_hz   # pas de la prevision = periode de la boucle du robot (doit etre > 0)
 	var p := Vector2.ZERO
 	var cap := 0.0
@@ -328,7 +328,7 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 			angle = _phase_croisement(c, somme, n, v_mm_s)
 		Phase.ALIGNEMENT:
 			angle = _phase_alignement(c, v_mm_s)
-	return Vector2(angle, float(vitesse_manoeuvre))
+	return Vector2(angle, vitesse_manoeuvre_mm_s)
 
 
 # ----- Phases (chacune retourne l'angle servo et change `phase`, `termine` ou `echec` si besoin)

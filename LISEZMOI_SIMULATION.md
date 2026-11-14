@@ -80,7 +80,7 @@ controleur.contourner_obstacles → controleur.contournement.actif
 controleur.cote_contournement, distance_manoeuvre_cm… → controleur.contournement.…
 controleur.distance_arret_cm, decalage_capteur_mm → controleur.arret.…
 controleur.recul_auto_mm, attente_avant_recul_s → controleur.recul.distance_auto_mm, attente_auto_s
-controleur.mm_s_par_cmd, empattement_mm, rampe_freinage_cmd_par_s, rampe_montee_cmd_par_s… → controleur.robot.…
+controleur.mm_s_par_cmd (depuis l'étape 9 : mode idéal seulement, voir étape 9), empattement_mm, deceleration_freinage_mm_s2, acceleration_montee_mm_s2… → controleur.robot.…
 À vérifier : ce découpage n'a pas encore été testé dans Godot. À comparer avec l'ancienne version sur une piste connue (par exemple « Contournement ») avant de la remplacer définitivement.
 
 Points à surveiller
@@ -134,11 +134,11 @@ Réglages renommés (pour `reglages_essai` dans l'inspecteur du nœud Simulation
 
 | Avant | Maintenant |
 | --- | --- |
-| `reprise_douce_s`, `vitesse_reprise`, `braquage_reprise_deg_s` | `reprise:duree_s`, `reprise:vitesse_max`, `reprise:braquage_max_deg_s` |
-| `rattrapage_actif`, `rattrapage_apres_s`, `vitesse_rattrapage`, `rattrapage_max_mm`, `rattrapages_max` | `rattrapage:actif`, `rattrapage:apres_s`, `rattrapage:vitesse`, `rattrapage:distance_max_mm`, `rattrapage:tentatives_max` |
+| `reprise_douce_s`, `vitesse_reprise`, `braquage_reprise_deg_s` | `reprise:duree_s`, `reprise:vitesse_max_mm_s`, `reprise:braquage_max_deg_s` |
+| `rattrapage_actif`, `rattrapage_apres_s`, `vitesse_rattrapage`, `rattrapage_max_mm`, `rattrapages_max` | `rattrapage:actif`, `rattrapage:apres_s`, `rattrapage:vitesse_mm_s`, `rattrapage:distance_max_mm`, `rattrapage:tentatives_max` |
 | `distance_fluide_mm`, `confirmations_fluide`, `distance_fluide_min_mm` | `fluide:distance_declenchement_mm`, `fluide:confirmations`, `fluide:distance_min_mm` |
-| `retrouver_apres_s`, `vitesse_retrouver`… | `retrouver:apres_s`, `retrouver:vitesse`… |
-| `vitesse_demi_tour`, `demi_tour_avant_s`… | `demi_tour:vitesse`, `demi_tour:duree_avant_s`… |
+| `retrouver_apres_s`, `vitesse_retrouver`… | `retrouver:apres_s`, `retrouver:vitesse_mm_s`… |
+| `vitesse_demi_tour`, `demi_tour_avant_s`… | `demi_tour:vitesse_mm_s`, `demi_tour:duree_avant_s`… |
 | `obstacles_memorises`, `rayon_meme_obstacle_mm`… | `memoire:obstacles_memorises`, `memoire:rayon_meme_obstacle_mm`… |
 
 Retiré : `fluide_en_roulant` (variante du contournement fluide avec arrêt, jamais retenue), `loi_table` et `ralentir_virage` (suivi de ligne), et les 3 fichiers `simulation.tscn*.tmp` (temporaires de Godot, maintenant ignorés par `.gitignore`).
@@ -173,10 +173,10 @@ Résultats (banc d'essai, 40 pistes aléatoires, D_arret 100 / D_recul 150) : 40
 
 ## Fichier unique des valeurs du robot (13 novembre, tâche #63, partie robot)
 
-Toutes les valeurs physiques du robot sont maintenant dans **`reglages_robot.json`** (racine du dépôt). Le fichier est lu par la simulation, et le sera plus tard par le code Python du robot avec `json.load`. Chaque entrée porte une valeur, une unité, un statut (`provisoire` ou `mesuré`), une source et une tâche. Il y a 28 entrées : géométrie, moteur, direction, ultrason, sondes, bille et cuvette, fréquence de la boucle. La liste des mesures à faire est dans `MESURES_ROBOT.md`.
+Toutes les valeurs physiques du robot sont maintenant dans **`reglages_robot.json`** (racine du dépôt). Le fichier est lu par la simulation, et le sera plus tard par le code Python du robot avec `json.load`. Chaque entrée porte une valeur, une unité, un statut (`provisoire`, `mesuré` ou `hypothèse`), une source et une tâche. Il y a 35 entrées (étape 9 : 28 provisoires, 3 mesurées, 4 hypothèses) : géométrie, moteur, direction, ultrason, sondes, bille et cuvette, fréquence de la boucle. La liste des mesures à faire est dans `MESURES_ROBOT.md`.
 
 Doublons supprimés :
-- vitesse : `ReglagesRobot.mm_s_par_cmd` et `Vehicule.vitesse_max` ;
+- vitesse : `ReglagesRobot.mm_s_par_cmd` et `Vehicule.vitesse_max` ; (depuis l'étape 9 : mode idéal seulement, voir étape 9)
 - braquage, servo et cône de l'ultrason : `reglages_robot.gd` et `vehicule.gd` ;
 - empattement et largeur de la voiture : `vehicule.gd`, `contournement.gd`, `contournement_fluide.gd` ;
 - `ArretObstacle.decalage_capteur_mm` ;
@@ -446,7 +446,7 @@ Les deux pics ont la même cause (journaux détaillés) :
 - `parcours_fourni` (0,96) : la bille oscille encore après l'arrêt du rattrapage, puis la reprise douce se termine (1 s après le rattrapage). La commande passe alors de 25 à 45 en 0,16 s (rampe de 125 cmd/s, environ 0,5 m/s²) ;
 - `demi_tour` (0,99) : même déroulement, de 25 à 55.
 
-Correction : rampe séparée pour l'accélération, `rampe_montee_cmd_par_s` (`reglages_robot.gd`, avec `rampe_freinage_cmd_par_s` = 125, ex-`rampe_cmd_par_s`, dont dépend la distance d'arrêt devant l'obstacle). Réglage d'un essai : `--reglage=robot:rampe_montee_cmd_par_s=40` ou `reglages_essai` `{"robot:rampe_montee_cmd_par_s": 40}` (idem `robot:rampe_freinage_cmd_par_s` ; les clés `robot:` absentes de `reglages_robot.json` s'appliquent au contrôleur seulement).
+Correction : rampe séparée pour l'accélération, `rampe_montee_cmd_par_s` (renommée à l'étape 9 : `acceleration_montee_mm_s2`) (`reglages_robot.gd`, avec `rampe_freinage_cmd_par_s` = 125, ex-`rampe_cmd_par_s`, dont dépend la distance d'arrêt devant l'obstacle). Réglage d'un essai : `--reglage=robot:rampe_montee_cmd_par_s=40` ou `reglages_essai` `{"robot:rampe_montee_cmd_par_s": 40}` (idem `robot:rampe_freinage_cmd_par_s` ; les clés `robot:` absentes de `reglages_robot.json` s'appliquent au contrôleur seulement).
 
 Nettoyage du 13 nov. (sans changement de comportement) : candidats C2 à C4 retirés de `suivi_ligne.gd` (résultats ci-dessus conservés) ; fréquence de la boucle (`frequence_controle_hz`, `reglages_robot.json`) lue par `contournement.gd` (pas de la prévision) et fournie à `mesures_stabilite.gd` par le banc ; `choisir_cap` reçoit `fluide.marge_obstacle_mm` : **un seul réglage de marge** (un essai `fluide:marge_obstacle_mm` change maintenant aussi la vérification du contournement par phases) ; le banc contrôle la « fin de ligne atteinte » des scénarios BLOQUE (`distance_fin_ligne_max_mm` = 150 mm, hypothèse ; fin du ruban d'une piste Blender = sommet le plus éloigné du départ le long du maillage, approximation).
 
@@ -536,3 +536,77 @@ Le guide (section 1) impose un rayon de 120 mm et plus, **aucun angle**. Le gén
 - **Graine 47515 (BLOQUE)** : l'obstacle est sur une droite qui finit juste avant une épingle de 165° de rayon 126 mm, **plus serrée que la voiture** (138 mm). Le contournement fluide finit près de l'entrée ; la voiture y arrive décalée, braquée à fond, perd la ligne, fait 3 rattrapages (`tentatives_max`) et s'arrête. Le même enchaînement de virages sans obstacle passe (essai temporaire, 3 tracés, bille max 0,79).
 - Bille à 0,94 sur les pistes libres (0,80 sur la grille) : à analyser.
 - Marge latérale min du fluide 7,9 mm sur les pistes libres (14,3 mm sur la grille, 20 mm visés).
+
+## Modèle réaliste (13 novembre, étape 9)
+
+### Ce qui change
+
+Jusqu'à l'étape 8, la simulation était **idéale** : ultrason sans bruit ni retard, vitesse proportionnelle à la commande (4 mm/s par unité), pas de zone morte. L'étape 9 ajoute un modèle réaliste, avec les valeurs mesurées par l'équipe. Il est dans `reglages_robot.json` ; le modèle idéal reste disponible (voir plus bas).
+
+- **Ultrason (`vehicule.gd`)** : mesure = `gain_ultrason` × distance réelle (depuis la face du capteur) + `biais_ultrason_mm`, plus un bruit gaussien (`bruit_ultrason_mm`), plus une valeur aberrante rare (`proba_aberrante_ultrason`, écart de signe aléatoire, amplitude uniforme dans `aberrante_ultrason_mm`), livrée après un **retard pur** `retard_ultrason_s` (une mesure prise à t est livrée à t + retard : file d'attente `_en_transit`). Cadence `frequence_ultrason_hz` = 16,13. Le véhicule expose `compteur_mesures` (nombre de mesures livrées) : `simulation.gd` le compare à la valeur du tour précédent et passe `mesure_nouvelle` au contrôleur (`Controleur.calculer(..., mesure_nouvelle)`).
+- **Aléatoire reproductible** : le véhicule a ses propres `RandomNumberGenerator` (ultrason, sondes), réensemencés à chaque `placer()` avec `vehicule.graine_aleatoire` : graine de la piste au banc, hash du nom du scénario (`String.hash()`) en scénario, 0 ailleurs. Deux exécutions identiques donnent le même CSV.
+- **Filtre (#65, `filtre_ultrason.gd`)** : choix par `filtre_ultrason` : `mediane3` (filtre d'origine) ou `mediane_kalman` (médiane de 3 + Kalman à vitesse constante, reproduction de `mediane_kalman.py`, `kalman.py` et `config.py` : σ_z 2,4 mm, σ_a 400 mm/s², rejet si ν²/S > 9, reset après 5 rejets, plage 20–2000 mm, P0 = diag(R, 1000²)). Le Kalman n'est mis à jour qu'à l'arrivée d'une mesure ; entre deux, la sortie est projetée avec la vitesse estimée. Les règles de sécurité (absence d'écho 0,15 s, zone proche, portée 1500 mm) sont gardées. Ni le contrôleur ni `arret_obstacle.gd` ne compensent un retard du filtre : rien n'a été adapté.
+- **Moteurs** : `table_vitesse_mm_s` = [[0, 0], [13, 0], [20, 50], [30, 113], [50, 256], [100, 614]] (interpolation linéaire, même table en arrière : hypothèse). La zone morte (13) découle de la table ; `zone_morte_moteur_cmd` et `vitesse_mm_s_par_cmd` sont supprimées du fichier. `ReglagesRobot.vitesse_mm_s(cmd)` et `commande_pour_vitesse(mm_s)` remplacent partout `mm_s_par_cmd` / `vitesse_max` (`vehicule.gd`, `controleur.gd`, `contournement.gd`, `contournement_fluide.gd`, `recul_ligne.gd`, `vitesse_freinage`). `vitesse_freinage(d)` = sqrt(2 × décélération × marge × d).
+- **Odométrie** : même table que le modèle, multipliée par (1 + `erreur_vitesse_odometrie`), clé à 0,0 (hypothèse, pour les essais de sensibilité). Appliquée dans `controleur.gd` (position, contresens, vitesse donnée au contournement) ; `odometrie.gd` ne change pas.
+
+### Algorithmes en unités physiques
+
+Pourquoi : les algorithmes raisonnaient en commandes (65, 45, 25, minimums 8 et 10, rampes de 60 et 125 commandes/s), calibrées pour 4 mm/s par commande. Avec la table réelle (≈ 7 mm/s par commande), le freinage atteignait ≈ 0,9 m/s² et la bille tombait (18 scénarios sur 25, 7 OK) ; les commandes 8 et 10 étaient sous la zone morte (13).
+
+Ce qui change : toutes les vitesses des algorithmes sont en **mm/s**, avec le suffixe `_mm_s` (valeur = ancienne commande × 4, exactement). Le contrôleur garde une vitesse de consigne `_v_mm_s`, applique les accélérations en mm/s², puis convertit **à la sortie seulement** : `commande = commande_pour_vitesse(_v_mm_s)` (la table, zone morte comprise), arrondie à l'entier envoyé au moteur. L'odométrie utilise `vitesse_odometrie_mm_s` de la commande ainsi calculée, comme avant. `vitesse_freinage()` devient `racine(2 × deceleration_freinage_mm_s2 × marge_freinage × distance)`, indépendante du moteur. Le contournement fluide arrondit sa vitesse vers le bas à une commande entière (`floorf` de la commande, puis table) : même troncature qu'avant en mode idéal, et vitesse toujours atteignable en réaliste.
+
+Noms des réglages (ancien → nouveau) : `rampe_montee_cmd_par_s` 60 → `acceleration_montee_mm_s2` 240 ; `rampe_freinage_cmd_par_s` 125 → `deceleration_freinage_mm_s2` 500 ; `vitesse_approche_min` 8 → `vitesse_approche_min_mm_s` 32 ; `suivi:vitesse_max` 55 → `vitesse_max_mm_s` 220 ; `suivi:vitesse_virage` 15 → `vitesse_virage_mm_s` 60 ; `arret:vitesse_recul` 10 → `vitesse_recul_mm_s` 40 ; `recul:vitesse_recul_ligne` 15 → `vitesse_recul_ligne_mm_s` 60 ; `rattrapage:vitesse` 15 → `vitesse_mm_s` 60 ; `retrouver:vitesse` et `demi_tour:vitesse` 18 → `vitesse_mm_s` 72 ; `reprise:vitesse_max` 25 → `vitesse_max_mm_s` 100 ; `contournement:vitesse_manoeuvre` 25 → `vitesse_manoeuvre_mm_s` 100 ; `fluide:vitesse_max` 65 → `vitesse_max_mm_s` 260. Essai sans toucher au code : `--reglage=robot:acceleration_montee_mm_s2=200` (ou `reglages_essai` `{"robot:deceleration_freinage_mm_s2": 400}`).
+
+Contrôle : `--modele=ideal` redonne `essais/scenarios_reference.csv` ligne pour ligne (0 ligne différente) ; en réaliste, 25 scénarios OK sur 25.
+
+### Clés de `reglages_robot.json`
+
+| Clé | Valeur | Statut | Source |
+| --- | --- | --- | --- |
+| `frequence_ultrason_hz` | 16,13 | mesuré | TEX « Filtre tes connaissances » (10 nov.) section 1 ; `config.py` |
+| `bruit_ultrason_mm` | 2,5 | mesuré | TEX tableau 1 (remplace `bruit_ultrason_cm`) |
+| `proba_aberrante_ultrason`, `aberrante_ultrason_mm` | 0,01 ; [10, 19] | mesuré | `Analyse_filtres_ultrason_E05.md` (9 nov.) |
+| `gain_ultrason`, `biais_ultrason_mm` | 0,971 ; 8,3 | mesuré | TEX section 6.5 |
+| `retard_ultrason_s` | 0,0 | hypothèse | 0,3 s observé avec l'ancien pilote, 0 avec `fastdrink` : à tester en sensibilité |
+| `filtre_ultrason` | `mediane_kalman` | provisoire | choix de l'équipe (#65) |
+| `table_vitesse_mm_s` | voir ci-dessus | hypothèse | essais en mouvement du 9 nov. (20, 30, 50) ; 13 et 100 : hypothèses |
+| `erreur_vitesse_odometrie` | 0,0 | hypothèse | essais de sensibilité |
+
+### Écarts du filtre avec le Python et cadence de l'ultrason
+
+Écarts restants entre `filtre_ultrason.gd` (`mediane_kalman`) et `09_Code-PiCar/fastdrink/filtres/mediane_kalman.py` : portée de 1500 mm (Python : 2000 mm) ; remise à zéro après `absence_s` (0,15 s ; 1 s si l'obstacle était proche), qui n'existe pas en Python ; horodatage au tour du contrôleur (≤ 20 ms) au lieu de l'instant de lecture. Une mesure hors de [20 ; 2000] mm est rejetée avant la fenêtre, comme en Python. Les constantes viennent de `config.py` (σ_a = 400 = `MEDIANE_KALMAN_SIGMA_A_MM_S2`, pas `KALMAN_SIGMA_A_MM_S2` = 200) : à garder synchronisées.
+
+Cadence de l'ultrason : la période réelle est un multiple du pas physique, soit 62,5 ms à 1/240 s (bancs) et 66,7 ms à 1/60 s (`vitesse_temps` 4). En modèle réaliste, le contrôleur arrondit la commande avant l'odométrie (même valeur entière que celle envoyée au véhicule) ; en modèle idéal (table linéaire) elle reste flottante pour l'odométrie, car l'arrondir change les résultats de `scenarios_reference.csv` (0 → 32 lignes différentes).
+
+### Modèle idéal et contrôle
+
+`--modele=ideal` en ligne de commande (propriété exportée `modele_ideal` du nœud Simulation, défaut faux ; `--modele=realiste` pour l'inverse) applique par-dessus le fichier la liste `FichierReglages.VALEURS_IDEALES` (`fichier_reglages.gd`, seul endroit) : fréquence 20 Hz, bruit 0, pas d'aberrante, gain 1, biais 0, retard 0, filtre `mediane3`, table vide (vitesse = 4 mm/s × commande, calcul linéaire d'avant), constante de temps 0, erreur d'odométrie 0. Les clés `robot:` de `reglages_essai` s'appliquent après, y compris en idéal : `--modele=ideal --reglage=robot:retard_ultrason_s=0.3` isole un seul effet.
+
+**Contrôle fait le 13 nov.** : 25 scénarios en `--modele=ideal` : CSV identique ligne pour ligne à `essais/scenarios_reference.csv` (0 ligne différente). Le banc de 40 pistes n'a pas été relancé dans cette étape.
+
+### Résultats
+
+**Depuis l'étape 9, le banc tourne par défaut en modèle réaliste.** Les références idéales d'avant restent valables avec `--modele=ideal` : 40/40, 15/15 (D_recul 50), 39/40 (libres), 25/25, tous identiques aux références à la ligne près.
+
+| Banc (modèle réaliste) | Résultat | Idéal (rappel) |
+| --- | --- | --- |
+| 40 pistes (`essais/reference_realiste_1-240.csv`) | **40/40**, 0 collision, bille max 0,81, erreur d'arrêt max 15,2 mm, recul 150,0 mm, marge min 17,5 mm | 40/40, 0,80, 3,9 mm, 150 mm, 14,3 mm |
+| 25 scénarios (`essais/scenarios_reference_realiste.csv`) | **25/25**, bille max 0,85, erreur d'arrêt max 15,1 mm | 25/25, 0,82 |
+| D_recul 50, 15 pistes (`essais/reference_realiste_recul50.csv`) | **15/15**, 0 collision, marge min 4,6 mm | 15/15, 1,1 mm |
+| 40 pistes libres (`essais/reference_realiste_libre.csv`) | **38/40**, 0 collision, bille max 1,00, marge min 8,5 mm | 39/40, 0,94 |
+
+Avant le passage en unités physiques, les scénarios réalistes donnaient 7/25 (bille tombée 14 fois : freinage à ~0,9 m/s² avec la table) ; le bruit, le biais, la cadence et le filtre de Kalman seuls passaient.
+
+**Sensibilité** (40 pistes, modèle réaliste) :
+
+| Variante | Résultat | Conclusion |
+| --- | --- | --- |
+| Retard de l'ultrason 0,3 s (valeur observée avec l'ancien pilote) | 39/40 : erreur d'arrêt 30,2 mm (> ± 30 mm, graine 110867) | Le retard réel du pilote `fastdrink` est à mesurer en priorité ; s'il existe, le compenser |
+| Odométrie fausse de +10 % (vitesse par commande mal étalonnée) | 39/40 : **1 collision** (graine 308842), recul 136 mm au lieu de 150 | La table de vitesse doit être mesurée avec soin (#18) ; le contournement dépend de l'odométrie |
+
+**Défauts trouvés (non corrigés) :**
+- Graine 300923 (pistes libres, réaliste seulement) : bille tombée à 6,2 s, avant tout obstacle, sans rattrapage. Cause à chercher (#67).
+- Graine 47515 : toujours en échec (#75).
+- L'erreur d'arrêt passe de 4 à 15 mm (biais du capteur non compensé : la loi 0,971 d + 8,3 n'est pas inversée dans le contrôleur ; le rapport la prévoit). Dans la tolérance, à corriger avec les mesures.
+- Recul : 156 mm au premier essai, 150,0 mm après correction (l'odométrie utilisait la commande non arrondie alors que le moteur reçoit la commande entière).
+

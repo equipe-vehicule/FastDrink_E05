@@ -6,7 +6,7 @@ class_name RepriseDouce
 extends RefCounted
 
 var duree_s := 1.0
-var vitesse_max := 25
+var vitesse_max_mm_s := 100.0     # (= ancienne commande 25 a 4 mm/s par commande)
 var braquage_max_deg_s := 120.0
 
 var _t := 0.0
@@ -23,7 +23,7 @@ func en_cours(en_suivi: bool, dt: float) -> bool:
 	return false
 
 func limiter_vitesse(cible: float) -> float:
-	return float(vitesse_max) if cible > vitesse_max else cible
+	return vitesse_max_mm_s if cible > vitesse_max_mm_s else cible
 
 func limiter_angle(angle: float, dt: float) -> float:
 	return move_toward(_angle_prec, angle, braquage_max_deg_s * dt)

@@ -9,7 +9,7 @@ const HYSTERESIS_MM := 30.0       # l'obstacle doit s'eloigner de plus que ca po
 
 var recul_autorise := true        # recule si on s'est arrete trop pres (depassement)
 var seuil_recul_mm := 15.0        # recule si on est plus pres que cible - seuil (moitie de la tolerance)
-var vitesse_recul := 10           # commande de recul (doit vaincre la zone morte du moteur)
+var vitesse_recul_mm_s := 40.0    # (= ancienne commande 10 a 4 mm/s par commande) vitesse de recul, en valeur absolue
 
 var arrete := false
 var en_recul := false
@@ -35,11 +35,11 @@ func limiter(d_mm: float, cible: float, d_voulue_mm: float) -> float:
 			en_recul = false
 			arrete = true
 		else:
-			return -float(vitesse_recul)
+			return -vitesse_recul_mm_s
 	if restante <= ARRET_TOLERANCE_MM:
 		arrete = true
 	elif restante > HYSTERESIS_MM:
 		arrete = false
 	if arrete:
 		return 0.0
-	return minf(cible, maxf(_robot.vitesse_freinage(restante), float(_robot.vitesse_approche_min)))
+	return minf(cible, maxf(_robot.vitesse_freinage(restante), _robot.vitesse_approche_min_mm_s))

@@ -36,10 +36,10 @@ var kd := 0.08                    # degres par (mm/s)
 
 # Candidats C2 a C4 (limiteur, zone neutre, gain au centre) essayes et rejetes le 13 nov. : voir LISEZMOI_SIMULATION.md, etape 5.
 
-# ----- Vitesses (commande 0..100)
-var vitesse_max := 55             # ligne droite, bien centre. Essais du 12 nov. (parcours fourni) : 40 -> 55,9 s,
-								  # 55 -> 44,4 s sans chute de bille, 70 -> 37,3 s mais la bille tombe
-var vitesse_virage := 15          # grand ecart ou ligne perdue
+# ----- Vitesses (mm/s ; le controleur les convertit en commande par la table du moteur)
+var vitesse_max_mm_s := 220.0     # (= ancienne commande 55 a 4 mm/s par commande) ligne droite, bien centre. Essais du 12 nov.
+								  # (parcours fourni) : commande 40 -> 55,9 s, 55 -> 44,4 s sans chute de bille, 70 -> 37,3 s mais la bille tombe
+var vitesse_virage_mm_s := 60.0   # (= ancienne commande 15 a 4 mm/s par commande) grand ecart ou ligne perdue
 
 # ----- Detection
 var delai_entre_sondes_s := 0.15  # duree pendant laquelle une disparition de la ligne est toleree
@@ -152,7 +152,7 @@ func _position(sondes: Array) -> float:
 ## PID. erreur = NAN quand la ligne est perdue. Retourne Vector2(angle, vitesse cible).
 func _pid(erreur: float, dt: float) -> Vector2:
 	var angle := 90.0
-	var cible := float(vitesse_virage)
+	var cible := vitesse_virage_mm_s
 	if not is_nan(erreur):
 		if erreur != 0.0:
 			derniere_erreur = erreur
@@ -175,7 +175,7 @@ func _pid(erreur: float, dt: float) -> Vector2:
 
 		# Vitesse adaptative : plus on est decentre, plus on ralentit
 		var ratio := clampf(absf(erreur) / ERREUR_MAX_MM, 0.0, 1.0)
-		cible = lerpf(float(vitesse_max), float(vitesse_virage), ratio)
+		cible = lerpf(vitesse_max_mm_s, vitesse_virage_mm_s, ratio)
 	else:
 		# Ligne perdue : braquage maximal du dernier cote vu, vitesse reduite
 		geler()

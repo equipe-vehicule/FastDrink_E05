@@ -15,7 +15,7 @@ var actif := true
 var apres_s := 0.6                   # ligne perdue depuis ca (apres l'avoir suivie) : on recule. Plus court, la voiture
 									 # reculait dans les virages de 90 deg qu'elle retrouve seule en 0,35 s
 var pause_s := 0.3                   # arret avant et apres la marche arriere (bille : pas d'aller-retour brusque)
-var vitesse := 15                    # commande de recul (valeur absolue)
+var vitesse_mm_s := 60.0             # (= ancienne commande 15 a 4 mm/s par commande) vitesse de recul, en valeur absolue
 var distance_max_mm := 250.0         # recul maximal par tentative
 var tentatives_max := 3              # tentatives sans retrouver la ligne durablement
 var ligne_retrouvee_s := 1.0         # ligne suivie au moins ca : le compteur de tentatives repart a zero
@@ -86,18 +86,18 @@ func demarrer(cote_ligne: int) -> void:
 	_fini = false
 	termine = false
 
-## cmd : commande de vitesse actuelle ; t_etat : temps depuis le debut de la manoeuvre.
+## v_mm_s : vitesse de consigne actuelle (mm/s) ; t_etat : temps depuis le debut de la manoeuvre.
 ## Retourne Vector2(angle servo, vitesse cible). Regarder `termine` ensuite.
-func calculer(sondes: Array, somme: float, n: int, cmd: float, t_etat: float, dt: float) -> Vector2:
+func calculer(sondes: Array, somme: float, n: int, v_mm_s: float, t_etat: float, dt: float) -> Vector2:
 	if not _recule:
 		# 1) arret complet, roues braquees du cote oppose, pendant au moins pause_s
-		if absf(cmd) < 0.5 and t_etat >= pause_s:
+		if absf(v_mm_s) < 2.0 and t_etat >= pause_s:
 			_recule = true
 			_odo.reinitialiser()             # odo.parcours = distance reculee
 		return Vector2(90.0 - 45.0 * _cote, 0.0)
 	# 3) ligne revue : arret complet pendant pause_s, puis reprise du suivi en marche avant
 	if _fini:
-		_t_fin += 0.0 if absf(cmd) >= 0.5 else dt
+		_t_fin += 0.0 if absf(v_mm_s) >= 2.0 else dt
 		if _t_fin >= pause_s:
 			termine = true
 		return Vector2(90.0, 0.0)
@@ -108,4 +108,4 @@ func calculer(sondes: Array, somme: float, n: int, cmd: float, t_etat: float, dt
 		_fini = true
 		_t_fin = 0.0
 		return Vector2(90.0, 0.0)
-	return Vector2(90.0 - 45.0 * _cote, -float(vitesse))
+	return Vector2(90.0 - 45.0 * _cote, -vitesse_mm_s)

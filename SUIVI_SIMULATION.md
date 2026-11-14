@@ -18,7 +18,9 @@ Mis à jour le 13 novembre 2026 (contournement par phases vérifié, #72 ; gén�
 
 Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucle à 50 Hz, faces de l'obstacle tirées au hasard, cas indépendants (rejouables un par un), rampe d'accélération de 60 cmd/s, `essais/reference_1-240.csv` ; 40/40 verdicts OK, 0 collision. Scénarios ciblés : 25/25 OK (`essais/scenarios_reference.csv`, détail dans `LISEZMOI_SIMULATION.md`). Avec D_recul 50 : 15/15, 0 collision depuis la vérification du contournement par phases (#72, étape 6 ; `essais/reference_recul50.csv`). Pistes libres, virages de 20 à 180° (#73) : 39/40, 0 collision, bille max 0,94 (`essais/reference_libre.csv`) ; échec de la graine 47515, voir plus bas. Stabilité : le suivi zigzague en ligne droite à environ 5 Hz, 8° de roue en médiane ; la bille (1,16 Hz) le filtre. Les réglages essayés pour le réduire (gains, limiteur, zone neutre, gain au centre) font monter la bille ou ajoutent des collisions : non retenus (étape 5). Bancs plus anciens (pas de 1/60 s) : 40/40 arrivées, 0 collision, 0 chute, 0 perte de ligne après un contournement. Autres valeurs (50/100, 150/190) : 0 collision ; 100/50 : 1 collision (voir plus bas). Détail : section 9.
 
-**Ce que la simulation ne garantit pas encore :** elle est idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
+**Depuis l'étape 9 (13 nov.), modèle réaliste par défaut** (bruit, biais, aberrantes, cadence de 16 Hz de l'ultrason, filtre médiane 3 + Kalman, table de vitesse des moteurs ; algorithmes en mm/s et mm/s²) : 40/40, 25/25, 15/15 (D_recul 50), 38/40 (pistes libres) ; sensibles au retard de l'ultrason et à l'étalonnage de la vitesse (détail : `LISEZMOI_SIMULATION.md`, étape 9). Références idéales : `--modele=ideal`.
+
+**Ce que la simulation ne garantit pas encore :** les valeurs du modèle réaliste viennent du rapport des filtres (3 vitesses moyennes, ultrason à l'arrêt) ; zone morte, temps de réponse, servo et dimensions ne sont pas mesurés. Avant l'étape 9, elle était idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
 
 ### Ce qu'il reste à faire pour une simulation fidèle (par priorité)
 
@@ -31,11 +33,12 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 - [ ] Masse de la bille et du robot, comportement de la bille dans la cuvette (amortissement provisoire).
 
 **2. Mettre ces mesures dans le modèle (`vehicule.gd`, `odometrie.gd`, `filtre_ultrason.gd`)**
-- [ ] Table de vitesse et zone morte dans le modèle ET dans l'odométrie (remplace `mm_s_par_cmd` linéaire).
-- [ ] Bruit, biais et retard de l'ultrason ; filtre du rapport (Kalman en mouvement, médiane + exponentiel à l'arrêt) à la place de la médiane de 3.
+- [x] Table de vitesse (3 points mesurés, zone morte 13 et point à 100 = hypothèses) dans le modèle et l'odométrie (étape 9).
+- [x] Bruit, biais, aberrantes et cadence de l'ultrason ; filtre médiane 3 + Kalman (`config.py`) (étape 9). Retard : 0 par défaut (hypothèse), 0,3 s testé en sensibilité : erreur d'arrêt jusqu'à 35,7 mm.
+- [ ] Compenser le biais de l'ultrason dans le contrôleur (erreur d'arrêt 15 mm au lieu de 4).
 - [ ] Retard du moteur et du servo.
-- [ ] Commandes minimales au-dessus de la zone morte (`vitesse_approche_min` 8, `vitesse_recul` 10 sont dessous).
-- [ ] Repasser le banc d'essai avec le modèle réaliste : c'est là que les vraies faiblesses apparaîtront (odométrie du contournement fluide en premier).
+- [ ] Vitesses minimales au-dessus de la zone morte : les algorithmes sont maintenant en mm/s (`vitesse_approche_min_mm_s` 32, `vitesse_recul_mm_s` 40) et la table convertit en commande ; reste à vérifier les valeurs sur le robot.
+- [x] Banc repassé avec le modèle réaliste (étape 9) : faiblesses = retard de l'ultrason et étalonnage de la vitesse (odométrie +10 % : 1 collision ; retard 0,3 s : erreur d'arrêt 30,2 mm) ; bille tombée sur la graine 300923 (pistes libres).
 
 **3. Algorithmes encore fragiles**
 - [x] Contournement par phases : trajectoire vérifiée avant de partir (cap de 40 à 90°), arrêt sûr en ARRET si rien ne passe (#72, étape 6). D_recul 50 : 15/15, 0 collision.
@@ -46,7 +49,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 - [ ] Ligne droite après l'obstacle (`droite_apres_min` = 0,60 m, hypothèse) : le retour du contournement du pire cas finit environ 0,68 m après l'arrière d'un bloc de 50 de profondeur (perte de ligne de 0,6 s dans `obstacle_avant_virage`) ; à confirmer avec le professeur (#56).
 - [ ] Écho du sol sur l'ultrason (cône vertical, capteur à 60 mm) : non simulé, à mesurer (#53).
 - [x] Pertes de ligne dans les virages de 120 mm (#74) : inévitables avec les sondes à 217 mm devant l'essieu (rayon minimal décrit par la barre : 257 mm), rattrapées en marche arrière. Nombre de rattrapages inchangé avec la rampe de 60 (2 dans `courbes_120`, 4 sur le parcours fourni).
-- [x] Bille après un rattrapage (#67) : rampe d'accélération séparée (`reglages_robot.gd` `rampe_montee_cmd_par_s` = 60, provisoire) ; bille max 0,99 → 0,82 sur les scénarios.
+- [x] Bille après un rattrapage (#67) : rampe d'accélération séparée (`reglages_robot.gd` `acceleration_montee_mm_s2` = 240, ex-`rampe_montee_cmd_par_s` = 60, provisoire) ; bille max 0,99 → 0,82 sur les scénarios.
 - [ ] Fin de ligne non reconnue (`courbes_120` sans la rampe de 60) : la voiture reprend la ligne en sens inverse ; contrôle « fin de ligne atteinte » ajouté au banc le 13 nov. (raison `bloque_loin_fin_ligne`, seuil 150 mm = hypothèse).
 - [ ] Rampe d'accélération : à revoir avec la fréquence propre réelle de la bille et la vitesse réelle par commande.
 - [ ] Retour sur la ligne après le contournement fluide : arrivée avec un angle jusqu'à ~29° (piste 4), sans perte de ligne mais à adoucir.
@@ -63,7 +66,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 - [x] Banc sans éditeur en ligne de commande (`--banc=40 --quitter`, environ 5 min, déterministe). Référence au pas de 1/240 s (13 nov.) ; `vitesse_temps` = 4 fait tourner la physique par pas de 1/60 s (bancs plus anciens).
 - [x] Scénarios courts et rejouables (`--scenarios=tous`, 25 cas depuis l'étape 6, verdict par cas) et mesures de stabilité dans le banc (13 nov., étape 3).
 - [x] Boucle du programme à 50 Hz exacts (elle tournait à 48 Hz, ou à 30 Hz au pas de 1/60 s).
-- [x] Cas du banc indépendants (13 nov., étape 5) : un cas rejoué seul donne le même résultat que dans la série ; option `--journal` (journal détaillé sans éditeur). `--reglage` accepte aussi un réglage du contrôleur lui-même, sans module, ex. `--reglage=rampe_montee_cmd_par_s=40`.
+- [x] Cas du banc indépendants (13 nov., étape 5) : un cas rejoué seul donne le même résultat que dans la série ; option `--journal` (journal détaillé sans éditeur). `--reglage` accepte aussi un réglage du contrôleur lui-même, sans module, ex. `--reglage=robot:acceleration_montee_mm_s2=160`.
 - [ ] Portage Python module par module (section 4), validation sur le robot avant le 3 décembre, tableau simulation / réel pour le rapport QR (9 décembre).
 
 ## 1. État au 12 novembre, avant la séquence arrêt → recul (historique ; état actuel : section 0)
@@ -104,16 +107,16 @@ Banc d'essai (40 pistes aléatoires, 38 obstacles) : 40 arrivées, 0 bille tomb�
 2. Le contournement fluide et le rattrapage s'appuient sur l'odométrie calculée à partir de la commande (4 mm/s par unité). Sur le robot, ce rapport est faux et non linéaire : à recalibrer avant tout essai.
 3. Le contournement fluide suppose un obstacle d'au plus 200 mm de large, décalé d'au plus 40 mm, vu à au moins 520 mm sur une ligne droite. Sur le banc, il n'est choisi que pour 16 obstacles sur 38 : les 22 autres sont vus trop près (obstacle peu après un virage) et passent par le contournement par phases, plus saccadé mais sans chute ni collision.
 4. Validé sur le banc de 40 pistes aléatoires (graines 1 + i × 7919) et les 7 pistes de démonstration : toujours pas une garantie pour la piste mystère. Piste 2 : marge de la bille 0,94 (suivi à 55 dans les courbes serrées ; à 50 : 0,85 mais 7 rattrapages au lieu de 3).
-5. Commandes sous la zone morte mesurée : `vitesse_approche_min` 8, `vitesse_recul` 10, fin du recul (−3 à −5), rattrapage à 15 (limite).
+5. Vitesses minimales (en mm/s depuis le 13 nov. : `vitesse_approche_min_mm_s` 32, `vitesse_recul_mm_s` 40, rattrapage 60) : la table les convertit en commandes au-dessus de la zone morte ; à confirmer sur le robot (fin du recul à −3 à −5 commandes à l'origine).
 6. Vitesses 55 (suivi) et 65 (manœuvre) choisies en simulation ; la marge de la bille sur le vrai robot est inconnue (rampe exprimée en unités de commande, pas en m/s²).
-7. Le filtre retenu dans le rapport (Kalman en mouvement, médiane + exponentiel à l'arrêt) n'est pas dans la simulation (médiane de 3 seulement).
+7. Le filtre retenu dans le rapport (Kalman en mouvement, médiane + exponentiel à l'arrêt) n'est pas dans la simulation (médiane de 3 seulement). **Fait à l'étape 9** (`mediane_kalman`, `filtre_ultrason.gd`) ; reste : le filtre de l'arrêt (médiane + exponentiel).
 8. La distance d'arrêt prédéterminée (30 mm avant l'obstacle) n'a pas de justification écrite.
 9. Valeurs encore provisoires : vitesse du servo (300 °/s), fréquence de boucle (50 Hz), masse et amortissement de la bille, tache des sondes.
 
 ## 4. Directives pour le portage sur le robot (Python, Raspberry Pi)
 
 1. Mesurer d'abord : vitesse réelle par commande (table), zone morte, vitesse du servo, fréquence réelle de la boucle, retard de la mesure ultrason.
-2. Remplacer `mm_s_par_cmd` (linéaire) par une table commande → vitesse, utilisée par l'odométrie ET par le modèle de simulation.
+2. Remplacer `mm_s_par_cmd` (linéaire) par une table commande → vitesse, utilisée par l'odométrie ET par le modèle de simulation. **Fait à l'étape 9** (`table_vitesse_mm_s`).
 3. Remonter toutes les commandes minimales au-dessus de la zone morte mesurée.
 4. Exprimer la rampe en m/s² (limite de la bille), puis la convertir en unités de commande avec la table.
 5. Porter module par module, avec les mêmes noms qu'en GDScript (`suivi_ligne`, `arret_obstacle`, `contournement_fluide`, `recul_ligne`, `odometrie`, `filtre_ultrason`, `controleur`) ; garder la même interface `calculer(sondes, distance_cm, dt) -> (vitesse, angle)`.

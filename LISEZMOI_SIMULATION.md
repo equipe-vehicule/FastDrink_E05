@@ -145,7 +145,7 @@ Retiré : `fluide_en_roulant` (variante du contournement fluide avec arrêt, jam
 
 ## Séquence arrêt → recul → contournement (12 novembre, précisions du professeur)
 
-Devant chaque obstacle, la voiture s'arrête à D_arret, recule de D_recul en suivant la ligne, puis contourne. Les valeurs officielles seront données plus tard : on les change à un seul endroit, `simulation/reglages_epreuve.gd`.
+Devant chaque obstacle, la voiture s'arrête à D_arret, recule de D_recul en suivant la ligne, puis contourne. Les valeurs officielles seront données plus tard : on les change à un seul endroit, `reglages_algorithmes.json` (objet `epreuve`, depuis le 14 nov., #63 ; `simulation/reglages_epreuve.gd` ne porte plus que les types).
 
 | Réglage (`ReglagesEpreuve`) | Valeur de test | Rôle |
 | --- | --- | --- |
@@ -687,3 +687,15 @@ Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge m
 - Pistes libres, réaliste, graine 205895 : erreur d'arrêt 24,7 mm, cause non analysée.
 - Graine 47515 en idéal : BLOQUE.
 - Étape 11 : reporter les trois écarts du filtre dans `mediane_kalman.py` et `config.py`.
+
+## Fichier unique des réglages des algorithmes (14 novembre, tâche #63, partie algorithmes)
+
+Les réglages du contrôleur et de ses modules sont maintenant dans **`reglages_algorithmes.json`** (racine du dépôt), seule source de leurs valeurs : le robot pourra donc être réglé sur le Raspberry Pi sans Godot (le Python lira le même fichier avec `json.load`). Un objet par module, avec les mêmes noms que `--reglage=<module>:<clé>=<valeur>` : `controleur` (réglages du `Controleur` lui-même), `robot` (rampes et freinage de `reglages_robot.gd`, hors `reglages_robot.json`), `epreuve`, `suivi`, `ultrason`, `arret`, `contournement`, `fluide`, `recul`, `rattrapage`, `retrouver`, `demi_tour`, `reprise`, `memoire` (129 valeurs). `odometrie` n'a aucun réglage. Les valeurs du modèle de simulation (bruit, valeurs aberrantes, retard…) restent dans `reglages_robot.json`.
+
+Dans les `.gd`, chaque réglage garde sa déclaration typée et ses commentaires de justification, mais sans valeur : `@export var kp: float`. Le marquage `@export` désigne les réglages (les variables d'état, `_x` ou sans `@export`, n'y sont pas) ; le chargeur s'en sert pour signaler toute clé manquante ou en trop. Les `const` restent dans le code (constantes de structure, bornes du guide comme `RECUL_MAX_MM`, constantes du Kalman reprises de `config.py`).
+
+Chargement : `simulation/reglages_algorithmes.gd` (seul code lié à Godot) parcourt les modules du contrôleur et applique chaque clé avec `set()` ; il signale par `push_error` un fichier absent, un module ou une clé inconnus ou manquants, et un type incompatible (le JSON ne distingue pas entier et réel : 4 est accepté pour un réel, 4.5 refusé pour un entier). `Simulation._controleur_regle()` l'appelle à la création de chaque contrôleur, **avant** `reglages_essai` et `--reglage=`, qui l'emportent donc toujours.
+
+Pour changer un réglage : modifier `reglages_algorithmes.json` (permanent) ou passer `--reglage=<module>:<clé>=<valeur>` / `reglages_essai` (un essai). Si une valeur est ajoutée dans un `.gd` (`@export var …`), il faut l'ajouter au fichier, sinon une erreur est signalée au démarrage.
+
+Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_recul 50, 40 pistes libres, scénarios) redonnent exactement les CSV de `essais/` (0 ligne différente, fichiers entiers comparés avec `diff`, aucune colonne de date ni de temps de calcul). Un `--reglage=` s'applique toujours après le fichier (`--scenarios=tous --reglage=suivi:kp=5.4` : 50 lignes différentes de la référence) ; une clé inconnue de `--reglage=` est signalée comme avant.

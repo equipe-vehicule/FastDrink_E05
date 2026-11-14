@@ -1,0 +1,160 @@
+{
+	"_info": "Reglages des algorithmes (une seule source des valeurs). Un objet par module, nom = propriete du Controleur (comme --reglage=<module>:<cle>=<valeur>) ; controleur = reglages du Controleur lui-meme. Justifications : commentaires du .gd du module. Valeurs du robot physique : reglages_robot.json.",
+	"controleur": {
+		"contournement_fluide": true,
+		"recul_fin_ligne_mm": 0.0,
+		"hors_ligne_apres_s": 0.5,
+		"portee_hors_ligne_mm": 500.0,
+		"echos_hors_ligne": 4,
+		"contresens_max_mm": 70.0
+	},
+	"robot": {
+		"deceleration_freinage_mm_s2": 500.0,
+		"acceleration_montee_mm_s2": 240.0,
+		"marge_freinage": 0.6,
+		"vitesse_approche_min_mm_s": 32.0
+	},
+	"epreuve": {
+		"distance_arret_mm": 100.0,
+		"distance_recul_mm": 150.0,
+		"pause_avant_recul_s": 0.3,
+		"pause_avant_contournement_s": 0.3,
+		"largeur_obstacle_mm": 100.0,
+		"hauteur_obstacle_mm": 150.0,
+		"profondeur_obstacle_mm": 50.0,
+		"tolerance_centrage_mm": 10.0
+	},
+	"suivi": {
+		"kp": 1.8,
+		"ki": 0.5,
+		"kd": 0.08,
+		"vitesse_max_mm_s": 220.0,
+		"vitesse_virage_mm_s": 60.0,
+		"delai_entre_sondes_s": 0.15,
+		"abandon_s": 40.0,
+		"aligne_avant_arrivee_s": 0.5,
+		"pas_arrivee": 3
+	},
+	"ultrason": {
+		"portee_max_mm": 1500.0,
+		"absence_s": 0.15,
+		"zone_proche_mm": 60.0,
+		"absence_proche_s": 1.0,
+		"prediction_sur_echo_manque": false,
+		"redemarrer_si_vitesse_impossible": true,
+		"sigma_a_mm_s2": 1000.0,
+		"projection_odometrie": false
+	},
+	"arret": {
+		"recul_autorise": true,
+		"seuil_recul_mm": 15.0,
+		"vitesse_recul_mm_s": 40.0
+	},
+	"contournement": {
+		"actif": true,
+		"cote_par_defaut": 1,
+		"cote_interieur_virage": true,
+		"seuil_virage_deg": 8.0,
+		"vitesse_manoeuvre_mm_s": 100.0,
+		"distance_manoeuvre_cm": 30.0,
+		"distance_securite_mm": 40.0,
+		"braquage_manoeuvre": 40.0,
+		"cap_evitement_deg": 40.0,
+		"caps_evitement_candidats_deg": [40.0, 50.0, 60.0, 70.0, 80.0, 90.0],
+		"cap_retour_deg": 45.0,
+		"gain_cap": 1.0,
+		"gain_lateral": 0.005,
+		"correction_laterale_max_deg": 10.0,
+		"distance_vue_mm": 450.0,
+		"distance_obstacle_suivant_mm": 300.0,
+		"echos_confirmation": 4,
+		"tolerance_memoire_mm": 40.0,
+		"marge_couloir_mm": 60.0,
+		"largeur_passe_mm": 300.0,
+		"decalage_max_mm": 450.0,
+		"depassement_max_mm": 200.0,
+		"recherche_max_deg": 150.0,
+		"recherche_en_orbite": true,
+		"rayon_orbite_mm": 300.0,
+		"gain_rayon_orbite": 0.004,
+		"correction_orbite_max_deg": 35.0,
+		"arc_orbite_max_deg": 330.0,
+		"rayon_orbite_plus_mm": 150.0,
+		"distance_entrante_mm": 80.0,
+		"sortie_orbite_tolerance_deg": 70.0,
+		"distance_observation_mm": 40.0,
+		"pente_ligne_tournee": -0.2,
+		"sortie_rapide_mm": 70.0,
+		"angle_ligne_tournee_deg": 15.0,
+		"croisement_max_mm": 150.0,
+		"n_sondes_travers": 3,
+		"rotation_travers_min_deg": 35.0,
+		"rotation_travers_max_deg": 150.0,
+		"marge_laterale_mm": 40.0,
+		"marge_longitudinale_mm": 60.0
+	},
+	"fluide": {
+		"rayons_candidats_mm": [300.0, 250.0, 220.0, 190.0, 160.0],
+		"marge_laterale_mm": 40.0,
+		"marge_obstacle_mm": 20.0,
+		"marge_arriere_mm": 40.0,
+		"longueur_retour_mm": 450.0,
+		"anticipation_mm": 150.0,
+		"reprise_avant_fin_mm": 225.0,
+		"acceleration_laterale_max": 0.3,
+		"vitesse_max_mm_s": 260.0
+	},
+	"recul": {
+		"vitesse_recul_ligne_mm_s": 60.0,
+		"point_virtuel_mm": 100.0,
+		"gain_recul": 1.5,
+		"ligne_perdue_recul_s": 0.3,
+		"finir_sans_ligne": true,
+		"reprendre_apres_recul": false
+	},
+	"rattrapage": {
+		"actif": true,
+		"apres_s": 0.6,
+		"pause_s": 0.3,
+		"vitesse_mm_s": 60.0,
+		"distance_max_mm": 250.0,
+		"tentatives_max": 4,
+		"ligne_retrouvee_s": 1.0,
+		"arret_si_introuvable": true,
+		"fin_ligne_ecart_mm": 10.0,
+		"fin_ligne_vue_s": 0.5,
+		"garder_cote": true
+	},
+	"retrouver": {
+		"apres_s": 9.0,
+		"max_s": 90.0,
+		"approche_max_s": 15.0,
+		"avance_cible_mm": 200.0,
+		"rayon_cible_mm": 80.0,
+		"spirale_s": 8.0,
+		"vitesse_mm_s": 72.0,
+		"gain": 2.0,
+		"rayon_obstacle_recent_mm": 400.0
+	},
+	"demi_tour": {
+		"duree_avant_s": 1.0,
+		"duree_arriere_s": 1.0,
+		"vitesse_mm_s": 72.0,
+		"duree_max_s": 20.0
+	},
+	"reprise": {
+		"duree_s": 1.0,
+		"vitesse_max_mm_s": 100.0,
+		"braquage_max_deg_s": 120.0
+	},
+	"memoire": {
+		"rayon_chemin_mm": 40.0,
+		"rayon_meme_ligne_mm": 100.0,
+		"rayon_meme_obstacle_mm": 200.0,
+		"obstacles_memorises": 8,
+		"rayon_meme_demi_tour_mm": 300.0,
+		"demi_tours_max_au_meme_endroit": 2,
+		"points_direction_max": 20,
+		"tolerance_droite_mm": 12.0
+	}
+}

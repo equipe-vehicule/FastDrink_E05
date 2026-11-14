@@ -30,30 +30,31 @@ const D_MIN_MM := 20.0            # plage acceptee par le Kalman : config.py DIS
 const D_MAX_MM := 2000.0          # config.py DISTANCE_MAX_MM (portee_max_mm ci-dessous, plus stricte, s'applique avant)
 const V0_ECART_TYPE_MM_S := 1000.0  # P0 = diag(R, 1000^2), v0 = 0 : kalman.py _demarrer
 
-var portee_max_mm := 1500.0       # au-dela, la mesure est ignoree
-var absence_s := 0.15             # duree sans echo avant de considerer qu'il n'y a plus d'obstacle
-var zone_proche_mm := 60.0        # sous cette distance, le capteur peut "perdre" un obstacle bien present
-var absence_proche_s := 1.0       # duree sans echo exigee quand l'obstacle etait tres proche
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « ultrason »), lues au demarrage ; ici : type et justification seulement.
+@export var portee_max_mm: float  # au-dela, la mesure est ignoree
+@export var absence_s: float      # duree sans echo avant de considerer qu'il n'y a plus d'obstacle
+@export var zone_proche_mm: float # sous cette distance, le capteur peut "perdre" un obstacle bien present
+@export var absence_proche_s: float # duree sans echo exigee quand l'obstacle etait tres proche
 ## Etape 10 : faux (defaut, ecart voulu avec le Python) : un echo manque ne touche pas l'etat du Kalman ; vrai :
 ## prediction seule, comme mediane_kalman.py ; la sortie est deja projetee a l'instant present (_kd + _kv x (t - _kt)). Pourquoi : la prediction
 ## avance _kt a l'instant du manque ; la mediane suivante, datee au milieu de sa fenetre (~62 ms plus tot), echoue alors
 ## au test t_milieu > _kt et n'est jamais prise. Echos alternes avec des manques (virage) : plus aucune mise a jour, la
 ## sortie derive (graine 300923 : 559 -> 0 mm en 0,35 s alors que le capteur lisait 547 a 559 mm).
-var prediction_sur_echo_manque := false
+@export var prediction_sur_echo_manque: bool
 ## Etape 10 : redemarrer le Kalman sur la mesure si sa vitesse estimee depasse la vitesse maximale du robot
 ## (ReglagesRobot.vitesse_max_mm_s(), 614 mm/s : hypothese, #18). Les obstacles sont fixes
 ## (precision du professeur) : la distance ne peut pas varier plus vite que la voiture. Graine 300923 : premiere mise a
 ## jour sur un bord d'obstacle balaye par le cone en virage (660 -> 572 mm en 62 ms) : vitesse estimee -1400 mm/s.
-var redemarrer_si_vitesse_impossible := true
+@export var redemarrer_si_vitesse_impossible: bool
 ## Etape 10 (14 nov., retenu par l'equipe) : acceleration non modelisee du Kalman (mm/s^2), 1000 au lieu de
 ## SIGMA_A_CONFIG_PY (400, config.py) : a 400, le filtre garde la vitesse d'approche pendant le freinage et l'arret part trop
 ## tot (erreur max 40 pistes 11,7 -> 9,3 mm). HYPOTHESE reglee en simulation ; a reporter dans config.py et verifier.
-var sigma_a_mm_s2 := 1000.0
+@export var sigma_a_mm_s2: float
 ## Option d'essai (etape 10, erreur d'arret ; non retenue par l'equipe, defaut faux) : prediction du Kalman et projection
 ## de la sortie avec l'avance mesuree par l'odometrie (obstacle fixe, droit devant) au lieu de la vitesse estimee.
 ## Cause visee (graine 308842, journal) : au freinage, le modele a vitesse constante garde ~-200 mm/s alors que la voiture
 ## ralentit ; la distance filtree passe 30 mm sous la vraie et la voiture s'arrete 12 mm trop loin.
-var projection_odometrie := false
+@export var projection_odometrie: bool
 ## Avance cumulee de la voiture selon l'odometrie (mm, > 0 en marche avant), donnee par le Controleur a chaque tour.
 var avance_mm := 0.0
 

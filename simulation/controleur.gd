@@ -49,13 +49,14 @@ const SEUIL_MARCHE_MM_S := 4.0       # roule au-dela de cette vitesse (= 1 comma
 const SEUIL_ARRET_MM_S := 2.0        # arretee sous cette vitesse (= 0,5 commande a 4 mm/s par commande)
 const LISSAGE_BRAQUAGE_S := 0.5      # constante de temps du braquage moyen (detection en virage, choix du cote)
 
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « controleur »), lues au demarrage ; ici : type et justification seulement.
 # ----- Reglages propres au controleur
-var contournement_fluide := true     # false : toujours le contournement par phases (apres l'arret et le recul)
-var recul_fin_ligne_mm := 0.0        # piste Recul : > 0 = a la fin de la ligne, s'arreter puis reculer de ca
-var hors_ligne_apres_s := 0.5        # ligne perdue depuis ca : la voiture n'est plus sur la ligne
-var portee_hors_ligne_mm := 500.0    # hors ligne, tout echo plus proche que ca est sur son chemin
-var echos_hors_ligne := 4            # pas consecutifs avec echo brut avant d'interrompre une orbite ou une recherche
-var contresens_max_mm := 70.0        # distance parcourue a contresens sur la ligne avant le demi-tour
+@export var contournement_fluide: bool # false : toujours le contournement par phases (apres l'arret et le recul)
+@export var recul_fin_ligne_mm: float # piste Recul : > 0 = a la fin de la ligne, s'arreter puis reculer de ca
+@export var hors_ligne_apres_s: float # ligne perdue depuis ca : la voiture n'est plus sur la ligne
+@export var portee_hors_ligne_mm: float # hors ligne, tout echo plus proche que ca est sur son chemin
+@export var echos_hors_ligne: int    # pas consecutifs avec echo brut avant d'interrompre une orbite ou une recherche
+@export var contresens_max_mm: float # distance parcourue a contresens sur la ligne avant le demi-tour
 
 # ----- Modules (leurs reglages s'ecrivent par ex. controleur.suivi.kp = 2.0, controleur.epreuve.distance_recul_mm = 150)
 var robot := ReglagesRobot.new()

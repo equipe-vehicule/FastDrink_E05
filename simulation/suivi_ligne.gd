@@ -29,27 +29,28 @@ const ERREUR_MAX_MM := 38.0       # ecart maximal mesurable avec la ligne visibl
 const INTEGRALE_MAX := 60.0       # anti-windup (mm*s)
 const FILTRE_DERIVEE := 0.3       # 0..1 : plus petit = derivee plus lissee
 
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « suivi »), lues au demarrage ; ici : type et justification seulement.
 # ----- Gains PID (a regler dans cet ordre : kp, puis kd, puis ki)
-var kp := 1.80                    # degres par mm d'ecart
-var ki := 0.5                     # degres par (mm*s). Essai a 0 (12 nov.) : plus de pertes de ligne dans les virages serres
-var kd := 0.08                    # degres par (mm/s)
+@export var kp: float             # degres par mm d'ecart
+@export var ki: float             # degres par (mm*s). Essai a 0 (12 nov.) : plus de pertes de ligne dans les virages serres
+@export var kd: float             # degres par (mm/s)
 
 # Candidats C2 a C4 (limiteur, zone neutre, gain au centre) essayes et rejetes le 13 nov. : voir LISEZMOI_SIMULATION.md, etape 5.
 
 # ----- Vitesses (mm/s ; le controleur les convertit en commande par la table du moteur)
-var vitesse_max_mm_s := 220.0     # (= ancienne commande 55 a 4 mm/s par commande) ligne droite, bien centre. Essais du 12 nov.
+@export var vitesse_max_mm_s: float # (= ancienne commande 55 a 4 mm/s par commande) ligne droite, bien centre. Essais du 12 nov.
 								  # (parcours fourni) : commande 40 -> 55,9 s, 55 -> 44,4 s sans chute de bille, 70 -> 37,3 s mais la bille tombe
-var vitesse_virage_mm_s := 60.0   # (= ancienne commande 15 a 4 mm/s par commande) grand ecart ou ligne perdue
+@export var vitesse_virage_mm_s: float # (= ancienne commande 15 a 4 mm/s par commande) grand ecart ou ligne perdue
 
 # ----- Detection
-var delai_entre_sondes_s := 0.15  # duree pendant laquelle une disparition de la ligne est toleree
+@export var delai_entre_sondes_s: float # duree pendant laquelle une disparition de la ligne est toleree
 ## Ligne perdue plus longtemps (fin du parcours) : arret (0 = ne jamais s'arreter).
 ## Pas moins de 8 s : en virage serre, les sondes (217 mm devant l'essieu) sortent de la ligne et la voiture
 ## la retrouve en tournant, ce qui peut prendre plusieurs secondes.
-var abandon_s := 40.0
+@export var abandon_s: float
 # ----- Ligne d'arrivee (barre noire en travers de la piste)
-var aligne_avant_arrivee_s := 0.5 # la voiture doit suivre la ligne bien centree depuis au moins ca
-var pas_arrivee := 3              # mesures consecutives avec les 5 sondes allumees
+@export var aligne_avant_arrivee_s: float # la voiture doit suivre la ligne bien centree depuis au moins ca
+@export var pas_arrivee: int      # mesures consecutives avec les 5 sondes allumees
 var arrivee := false
 
 ## Dernier ecart non nul (mm) : sert a savoir de quel cote chercher la ligne quand on la perd.

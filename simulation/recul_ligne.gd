@@ -10,17 +10,18 @@ extends RefCounted
 
 enum Fin { EN_COURS, TERMINE, LIGNE_PERDUE }
 
-var vitesse_recul_ligne_mm_s := 60.0  # (= ancienne commande 15 a 4 mm/s par commande) vitesse de recul, en valeur absolue
-var point_virtuel_mm := 100.0     # distance du point asservi derriere l'essieu arriere (plus grand = plus doux)
-var gain_recul := 1.5             # 1/s : vitesse de convergence du point virtuel vers la ligne
-var ligne_perdue_recul_s := 0.3   # ligne invisible plus longtemps : perdue
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « recul »), lues au demarrage ; ici : type et justification seulement.
+@export var vitesse_recul_ligne_mm_s: float # (= ancienne commande 15 a 4 mm/s par commande) vitesse de recul, en valeur absolue
+@export var point_virtuel_mm: float # distance du point asservi derriere l'essieu arriere (plus grand = plus doux)
+@export var gain_recul: float     # 1/s : vitesse de convergence du point virtuel vers la ligne
+@export var ligne_perdue_recul_s: float # ligne invisible plus longtemps : perdue
 ## Ligne perdue en cours de recul : true = finir la distance tout droit (odometrie), false = s'arreter (Fin.LIGNE_PERDUE).
 ## Voiture arretee de travers en sortie de virage (jusqu'a 19 deg) : en reculant, les sondes quittent la ligne apres
 ## ~110 mm (banc du 12 nov. : reculs de 78 a 108 mm pour 150 demandes). La distance de recul est imposee, et la ligne
 ## droite avant l'obstacle garantit la place.
-var finir_sans_ligne := true
+@export var finir_sans_ligne: bool
 var ligne_perdue_en_route := false # diagnostic : la fin du recul s'est faite sans la ligne
-var reprendre_apres_recul := false # true = repart en marche avant a la fin du recul, false = reste arrete
+@export var reprendre_apres_recul: bool # true = repart en marche avant a la fin du recul, false = reste arrete
 
 var fin := Fin.EN_COURS
 

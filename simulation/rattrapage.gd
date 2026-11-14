@@ -11,27 +11,28 @@ extends RefCounted
 
 enum Reaction { AUCUNE, RATTRAPER, ARRETER }
 
-var actif := true
-var apres_s := 0.6                   # ligne perdue depuis ca (apres l'avoir suivie) : on recule. Plus court, la voiture
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « rattrapage »), lues au demarrage ; ici : type et justification seulement.
+@export var actif: bool
+@export var apres_s: float           # ligne perdue depuis ca (apres l'avoir suivie) : on recule. Plus court, la voiture
 									 # reculait dans les virages de 90 deg qu'elle retrouve seule en 0,35 s
-var pause_s := 0.3                   # arret avant et apres la marche arriere (bille : pas d'aller-retour brusque)
-var vitesse_mm_s := 60.0             # (= ancienne commande 15 a 4 mm/s par commande) vitesse de recul, en valeur absolue
-var distance_max_mm := 250.0         # recul maximal par tentative
+@export var pause_s: float           # arret avant et apres la marche arriere (bille : pas d'aller-retour brusque)
+@export var vitesse_mm_s: float      # (= ancienne commande 15 a 4 mm/s par commande) vitesse de recul, en valeur absolue
+@export var distance_max_mm: float   # recul maximal par tentative
 ## Tentatives sans retrouver la ligne durablement. Etape 10 (14 nov., #75, retenu par l'equipe) : avec
 ## garder_cote = true et 4 tentatives (HYPOTHESE : plus petite valeur qui passe), la graine 47515 des pistes libres
 ## passe (epingles de rayon 125 a 140 mm, sous le rayon minimal de la voiture, 138 mm) ; garder_cote seul ou 5 tentatives seules : BLOQUE. Change aussi le modele ideal.
-var tentatives_max := 4
-var ligne_retrouvee_s := 1.0         # ligne suivie au moins ca : le compteur de tentatives repart a zero
-var arret_si_introuvable := true     # apres tentatives_max (ou fin de ligne) : arret de securite (BLOQUE)
-var fin_ligne_ecart_mm := 10.0       # ligne perdue alors qu'elle etait a moins de ca du centre...
-var fin_ligne_vue_s := 0.5           # ... et suivie sans interruption au moins ca : fin de ligne
+@export var tentatives_max: int
+@export var ligne_retrouvee_s: float # ligne suivie au moins ca : le compteur de tentatives repart a zero
+@export var arret_si_introuvable: bool # apres tentatives_max (ou fin de ligne) : arret de securite (BLOQUE)
+@export var fin_ligne_ecart_mm: float # ligne perdue alors qu'elle etait a moins de ca du centre...
+@export var fin_ligne_vue_s: float   # ... et suivie sans interruption au moins ca : fin de ligne
 ## Etape 10 (#75) : tant que la ligne n'a pas ete suivie durablement (ligne_retrouvee_s), les tentatives suivantes
 ## reculent du meme cote que la premiere (cote du virage). Pourquoi (graine 47515, journal du 14 nov.) : dans une epingle
 ## plus serree que la voiture, la 2e marche arriere finit la barre presque parallele a la ligne (cap -98 deg par rapport
 ## a elle) avec la ligne sous les sondes de gauche (11100) ; le PID braque a gauche, perd la ligne, et la 3e tentative,
 ## prise de ce cote, ramenait la voiture au point de la 1re (boucle, puis BLOQUE). Comportement d'avant :
 ## essai par --reglage=rattrapage:garder_cote=false --reglage=rattrapage:tentatives_max=3.
-var garder_cote := true
+@export var garder_cote: bool
 
 var termine := false                 # ligne revue et voiture arretee : le suivi peut reprendre
 

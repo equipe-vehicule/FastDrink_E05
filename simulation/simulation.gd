@@ -3,6 +3,8 @@
 ##           M manuel/automatique | Fleches : conduite manuelle | Espace : arret | C : vue | L : journal CSV on/off
 ## Ligne de commande (apres --) : --piste=6  --graine=1234 ; banc sans editeur : voir _lire_ligne_de_commande()
 ## Valeurs du robot : reglages_robot.json (racine du depot), fichier unique partage avec le code Python.
+## Reglages des algorithmes : reglages_algorithmes.json (racine du depot), meme principe ; ils sont lus a la creation du
+## controleur (_controleur_regle), puis reglages_essai / --reglage= les remplacent.
 ##
 ## Ce script ne fait qu'assembler les modules et decider qui conduit la voiture :
 ##   Monde, Pistes, Vehicule, BilleCuvette, CameraSuivi, Hud, Entrees, MesureAcceleration, JournalCSV
@@ -10,6 +12,8 @@ extends Node3D
 
 ## Lecture du fichier unique des valeurs du robot (reglages_robot.json, racine du depot).
 const FichierReglages := preload("res://simulation/fichier_reglages.gd")
+## Lecture du fichier unique des reglages des algorithmes (reglages_algorithmes.json, racine du depot).
+const ReglagesAlgorithmes := preload("res://simulation/reglages_algorithmes.gd")
 ## Scenarios courts et rejouables (option --scenarios=tous ou --scenarios=nom1,nom2).
 const Scenarios := preload("res://simulation/scenarios.gd")
 
@@ -19,6 +23,7 @@ const Scenarios := preload("res://simulation/scenarios.gd")
 ## Demarre le journal CSV des le lancement (essais automatiques, sans appuyer sur L).
 @export var journal_au_demarrage := false
 ## Essais : reglages appliques a chaque depart, ex. {"suivi:vitesse_max_mm_s": 220, "robot:vitesse_servo_deg_s": 200}.
+##   Appliques APRES reglages_algorithmes.json (ils l'emportent).
 ##   "<module>:<reglage>" : reglage du controleur ; "<reglage>" seul : reglage du controleur lui-meme
 ##       (ex. "recul_fin_ligne_mm") ;
 ##   "robot:<cle de reglages_robot.json>" : valeur du robot, pour le modele ET le controleur (lue au lancement).
@@ -241,10 +246,12 @@ func _regler_mode_piste() -> void:
 		"Recul":
 			controleur.recul_fin_ligne_mm = 180.0
 
-## Nouveau controleur : valeurs du robot (reglages_robot.json), puis reglages de l'essai (reglages_essai).
+## Nouveau controleur : reglages des algorithmes (reglages_algorithmes.json), valeurs du robot (reglages_robot.json),
+## puis reglages de l'essai (reglages_essai, qui l'emportent).
 ## Les modules gardent la meme reference a controleur.robot : appliquer() la remplit sur place.
 func _controleur_regle() -> Controleur:
 	var c := Controleur.new()
+	ReglagesAlgorithmes.appliquer(c)
 	c.robot.appliquer(reglages_robot)
 	var essai := reglages_essai.duplicate()
 	essai.merge(_reglages_cas, true)

@@ -13,12 +13,13 @@ const POINTS_CHEMIN := 200           # 4 m de chemin parcouru
 const POINTS_CHEMIN_RECENTS := 15    # les derniers points (300 mm) ne comptent pas : la voiture vient d'y passer
 const DEMI_TOURS_MEMORISES := 6
 
-var rayon_chemin_mm := 40.0          # ligne vue a moins de ca d'un point deja parcouru : c'est ce morceau
-var rayon_meme_ligne_mm := 100.0     # ligne vue a moins de ca de la ligne memorisee : c'est la ligne entrante
-var rayon_meme_obstacle_mm := 200.0  # echo a moins de ca d'un obstacle deja contourne : c'est lui, vu de dos
-var obstacles_memorises := 8
-var rayon_meme_demi_tour_mm := 300.0
-var demi_tours_max_au_meme_endroit := 2  # ensuite on continue : tourner sur place ne resoudrait rien
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « memoire »), lues au demarrage ; ici : type et justification seulement.
+@export var rayon_chemin_mm: float   # ligne vue a moins de ca d'un point deja parcouru : c'est ce morceau
+@export var rayon_meme_ligne_mm: float # ligne vue a moins de ca de la ligne memorisee : c'est la ligne entrante
+@export var rayon_meme_obstacle_mm: float # echo a moins de ca d'un obstacle deja contourne : c'est lui, vu de dos
+@export var obstacles_memorises: int
+@export var rayon_meme_demi_tour_mm: float
+@export var demi_tours_max_au_meme_endroit: int # ensuite on continue : tourner sur place ne resoudrait rien
 
 var ligne: Array[Vector2] = []       # points de la ligne vus par les sondes (dernier metre)
 var obstacles: Array[Vector2] = []   # centres des obstacles contournes
@@ -111,8 +112,8 @@ func sens_ligne() -> Vector2:
 ## (au-dela, la ligne tournait : ces points sont dans le virage precedent).
 ## sens_ligne() (2 points a 100 mm, sondes a +/- 9,5 mm pres) se trompe jusqu'a ~10 deg. Obstacle juste apres un
 ## virage (banc du 12 nov., graine 7920) : un ajustement sur 400 mm melangeait virage et droite.
-var points_direction_max := 20         # 20 x 20 mm = 400 mm au plus
-var tolerance_droite_mm := 12.0        # dispersion des points (sondes espacees de 19 mm : +/- 9,5 mm) + marge
+@export var points_direction_max: int  # 20 x 20 mm = 400 mm au plus
+@export var tolerance_droite_mm: float # dispersion des points (sondes espacees de 19 mm : +/- 9,5 mm) + marge
 ## Retourne [centre, direction] : un point de la droite (centre des points retenus) et sa direction unitaire.
 func derniere_droite() -> Array:
 	var retenus: Array[Vector2] = ligne.slice(maxi(0, ligne.size() - 2))

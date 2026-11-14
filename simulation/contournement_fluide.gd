@@ -20,34 +20,35 @@
 class_name ContournementFluide
 extends RefCounted
 
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « fluide »), lues au demarrage ; ici : type et justification seulement.
 # ----- Trajectoire
 ## Rayon minimal de la voiture : 138 mm (45 deg). En dessous de ~1,15 fois cette valeur, la poursuite decroche
 ## (banc du 12 nov. : retour de rayon ~140 mm, voiture perdue). Du plus doux au plus serre.
-var rayons_candidats_mm := [300.0, 250.0, 220.0, 190.0, 160.0]
-var marge_laterale_mm := 40.0      # entre le flanc de la voiture et l'obstacle (tolerance de centrage en plus)
+@export var rayons_candidats_mm: Array
+@export var marge_laterale_mm: float # entre le flanc de la voiture et l'obstacle (tolerance de centrage en plus)
 ## Marge de la verification (une seule valeur, aussi passee a Contournement.choisir_cap). Depuis le 14 nov. (#76), le
 ## retard de la poursuite est simule : la marge ne couvre plus que les ecarts non simules (odometrie 1 a 2 mm, position
 ## de la face +1,6 mm en moyenne, acceleration au depart) et la securite voulue. HYPOTHESE : valeur de 20 mm inchangee,
 ## son ancienne justification (retard de suivi de 12 mm) ne s'applique plus ; a revoir avec les essais sur le robot.
-var marge_obstacle_mm := 20.0
-var marge_arriere_mm := 40.0       # le retour commence quand l'arriere a depasse l'obstacle de ca
+@export var marge_obstacle_mm: float
+@export var marge_arriere_mm: float # le retour commence quand l'arriere a depasse l'obstacle de ca
 ## Retour en quintique : rayon minimal ~ L^2 / (5,77 * ecart) ; a 450 mm et 170 mm d'ecart : ~210 mm.
-var longueur_retour_mm := 450.0
+@export var longueur_retour_mm: float
 ## Distance du point vise devant l'essieu (pure pursuit). Depuis l'arret (graine 39596) : a 250 mm, la voiture coupait
 ## la courbe avec jusqu'a 34 mm de retard et touchait l'obstacle ; a 150 mm, 12 mm de retard au plus, bille a 0,71.
 ## Historique (14 nov., #76) : avant le rejeu de la poursuite (_poursuite_libre), la marge la plus faible tombait dans
 ## la SORTIE, coin avant contre l'obstacle ; cap reel 27,5 deg pour 34,8 deg prevus, ~31 mm de marge perdue (D_recul 50,
 ## graine 110867 : 42,9 mm prevus, 10,6 mm reels). Essai non retenu par l'equipe, anticipation a 100 mm : marges min 20,3 mm (D_recul 50) et 28,1 mm (40 pistes) au lieu de 10,6 et 20,0, mais bille plus
 ## haute en ideal (pire_cas_avant_virage 0,64 -> 0,86) et oscillation en droite 3,6 -> 8,6 deg.
-var anticipation_mm := 150.0
-var reprise_avant_fin_mm := 225.0  # le PID reprend des que les sondes voient la ligne dans la 2e moitie du retour.
+@export var anticipation_mm: float
+@export var reprise_avant_fin_mm: float # le PID reprend des que les sondes voient la ligne dans la 2e moitie du retour.
 								   # 0 (attendre la fin) : sur une piste aleatoire, la ligne tournait avant la fin du retour
 								   # et etait perdue ; 225 teste sans chute de bille (pistes 4 et 7)
 ## Vitesse : la plus grande qui garde l'acceleration laterale v^2 / R sous acceleration_laterale_max, plafonnee.
 ## 0,3 m/s^2 : sous la deceleration de freinage utilisee en ligne droite (500 mm/s^2, soit 0,5 m/s^2), car la bille subit
 ## aussi les a-coups du braquage.
-var acceleration_laterale_max := 0.3   # m/s^2
-var vitesse_max_mm_s := 260.0          # (= ancienne commande 65 a 4 mm/s par commande ; sans chute de bille au banc du 12 nov.)
+@export var acceleration_laterale_max: float # m/s^2
+@export var vitesse_max_mm_s: float    # (= ancienne commande 65 a 4 mm/s par commande ; sans chute de bille au banc du 12 nov.)
 
 var cote := 1
 var termine := false

@@ -5,16 +5,17 @@
 class_name RetrouverLigne
 extends RefCounted
 
-var apres_s := 9.0                   # ligne perdue depuis ca en suivi. Pas moins : en virage serre, la voiture retrouve
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « retrouver »), lues au demarrage ; ici : type et justification seulement.
+@export var apres_s: float           # ligne perdue depuis ca en suivi. Pas moins : en virage serre, la voiture retrouve
 									 # la ligne seule en tournant (a 4 s, elle bouclait)
-var max_s := 90.0                    # ensuite BLOQUE
-var approche_max_s := 15.0           # ensuite, ou une fois la cible atteinte : recherche en spirale
-var avance_cible_mm := 200.0         # la cible est devant le dernier point vu, dans le sens de marche : jamais en arriere
-var rayon_cible_mm := 80.0           # cible consideree comme atteinte
-var spirale_s := 8.0                 # plus grand = la spirale s'ouvre plus lentement
-var vitesse_mm_s := 72.0    # (= ancienne commande 18 a 4 mm/s par commande)
-var gain := 2.0                      # degres de roue par degre d'ecart de direction
-var rayon_obstacle_recent_mm := 400.0  # si pres de l'obstacle evite, on s'en ecarte d'abord
+@export var max_s: float             # ensuite BLOQUE
+@export var approche_max_s: float    # ensuite, ou une fois la cible atteinte : recherche en spirale
+@export var avance_cible_mm: float   # la cible est devant le dernier point vu, dans le sens de marche : jamais en arriere
+@export var rayon_cible_mm: float    # cible consideree comme atteinte
+@export var spirale_s: float         # plus grand = la spirale s'ouvre plus lentement
+@export var vitesse_mm_s: float # (= ancienne commande 18 a 4 mm/s par commande)
+@export var gain: float              # degres de roue par degre d'ecart de direction
+@export var rayon_obstacle_recent_mm: float # si pres de l'obstacle evite, on s'en ecarte d'abord
 
 var _robot: ReglagesRobot
 var _odo: Odometrie

@@ -1,7 +1,7 @@
 ## Caracteristiques du robot partagees par tous les algorithmes (geometrie, moteur, servo).
 ## Ce fichier ne depend pas de Godot : la meme logique peut tourner sur le vrai robot.
 ## Les valeurs physiques viennent du fichier unique reglages_robot.json (racine du depot), par appliquer() :
-## aucune valeur du robot n'est ecrite ici. Les reglages des algorithmes (rampe, freinage) restent ici.
+## aucune valeur du robot n'est ecrite ici. Les reglages des algorithmes (rampe, freinage) sont declares ici, leurs valeurs sont dans reglages_algorithmes.json (objet robot).
 class_name ReglagesRobot
 extends RefCounted
 
@@ -48,10 +48,11 @@ var gain_ultrason := 1.0
 var biais_ultrason_mm := 0.0
 var frequence_controle_hz := 0.0  # frequence de la boucle du programme du robot (Hz ; 0 = a chaque pas physique)
 
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « robot »), lues au demarrage ; ici : type et justification seulement.
 # ----- Algorithmes : vitesses et freinage (unites physiques ; la table convertit en commande a la sortie du controleur)
 ## Deceleration maximale de la vitesse de consigne au freinage (bille) ; vitesse_freinage() en depend.
 ## (= ancienne rampe_freinage_cmd_par_s 125 commandes/s a 4 mm/s par commande.)
-var deceleration_freinage_mm_s2 := 500.0
+@export var deceleration_freinage_mm_s2: float
 ## Etape 5 (#67, 13 nov.) : acceleration de la vitesse de consigne, a l'acceleration seulement (mm/s^2 ; 0 = deceleration_freinage_mm_s2).
 ## (= ancienne rampe_montee_cmd_par_s 60 commandes/s a 4 mm/s par commande.)
 ## Le freinage garde deceleration_freinage_mm_s2 (vitesse_freinage en depend : arret devant l'obstacle).
@@ -60,10 +61,10 @@ var deceleration_freinage_mm_s2 := 500.0
 ## Avant le 13 nov. : 0 (500 mm/s^2). Avec 240 : bille max 0,99 -> 0,82 (17 scenarios), 0,84 -> 0,80 (banc 40),
 ## rattrapages 14 -> 10, temps +3 %. 160 et 100 essayes (ex-commandes 40 et 25) : voir LISEZMOI_SIMULATION.md (etape 5).
 ## Provisoire : depend de la frequence propre de la bille (a mesurer sur le robot).
-var acceleration_montee_mm_s2 := 240.0
-var marge_freinage := 0.6         # 0..1 : fraction de la deceleration utilisee pour freiner
+@export var acceleration_montee_mm_s2: float
+@export var marge_freinage: float # 0..1 : fraction de la deceleration utilisee pour freiner
 ## Vitesse minimale d'approche (evite de caler avant la cible). (= ancienne commande 8 a 4 mm/s par commande.)
-var vitesse_approche_min_mm_s := 32.0
+@export var vitesse_approche_min_mm_s: float
 
 ## Remplit les valeurs du robot depuis {cle JSON: valeur} (FichierReglages.lire). Signale toute cle absente.
 func appliquer(valeurs: Dictionary) -> void:

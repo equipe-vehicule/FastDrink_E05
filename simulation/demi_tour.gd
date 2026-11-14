@@ -4,10 +4,11 @@
 class_name DemiTour
 extends RefCounted
 
-var duree_avant_s := 1.0             # duree de chaque marche avant (braquage maximal)
-var duree_arriere_s := 1.0           # duree de chaque marche arriere (braquage oppose)
-var vitesse_mm_s := 72.0    # (= ancienne commande 18 a 4 mm/s par commande)
-var duree_max_s := 20.0
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « demi_tour »), lues au demarrage ; ici : type et justification seulement.
+@export var duree_avant_s: float     # duree de chaque marche avant (braquage maximal)
+@export var duree_arriere_s: float   # duree de chaque marche arriere (braquage oppose)
+@export var vitesse_mm_s: float # (= ancienne commande 18 a 4 mm/s par commande)
+@export var duree_max_s: float
 
 var termine := false
 

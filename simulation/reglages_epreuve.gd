@@ -1,5 +1,5 @@
 ## Ce qu'impose l'epreuve (guide du cours et precisions du professeur), partage par tous les algorithmes.
-## Un seul endroit a modifier quand les valeurs officielles seront donnees. Ne depend pas de Godot.
+## Un seul endroit a modifier quand les valeurs officielles seront donnees : reglages_algorithmes.json (objet epreuve). Ne depend pas de Godot.
 ##
 ## Guide (section 1) : arret a une distance predeterminee (+/- 30 mm), ruban de 18 mm, courbes de rayon >= 120 mm,
 ## contournement en quittant la ligne, recul en suivant la ligne sur moins de 200 mm.
@@ -13,17 +13,18 @@ extends RefCounted
 const RECUL_MAX_MM := 200.0              # guide : recul sur moins de 200 mm
 const TOLERANCE_ARRET_MM := 30.0         # guide : precision de l'arret
 
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « epreuve »), lues au demarrage ; ici : type et justification seulement.
 # ----- Sequence devant un obstacle (VALEURS DE TEST : les valeurs officielles seront donnees plus tard)
-var distance_arret_mm := 100.0           # de l'avant de la voiture a la face de l'obstacle
-var distance_recul_mm := 150.0           # recul en suivant la ligne, < RECUL_MAX_MM
-var pause_avant_recul_s := 0.3           # immobile apres l'arret (bille : pas d'aller-retour brusque)
-var pause_avant_contournement_s := 0.3   # immobile apres le recul
+@export var distance_arret_mm: float     # de l'avant de la voiture a la face de l'obstacle
+@export var distance_recul_mm: float     # recul en suivant la ligne, < RECUL_MAX_MM
+@export var pause_avant_recul_s: float   # immobile apres l'arret (bille : pas d'aller-retour brusque)
+@export var pause_avant_contournement_s: float # immobile apres le recul
 
 # ----- Obstacle (precisions du professeur)
-var largeur_obstacle_mm := 100.0         # en travers de la ligne
-var hauteur_obstacle_mm := 150.0
-var profondeur_obstacle_mm := 50.0       # dans le sens de la marche
-var tolerance_centrage_mm := 10.0        # obstacle pose a la main : ecart possible de son centre a la ligne
+@export var largeur_obstacle_mm: float   # en travers de la ligne
+@export var hauteur_obstacle_mm: float
+@export var profondeur_obstacle_mm: float # dans le sens de la marche
+@export var tolerance_centrage_mm: float # obstacle pose a la main : ecart possible de son centre a la ligne
 
 ## Precision du 13 nov. : le bloc peut etre pose sur n'importe quelle face (debout, tourne, couche), toujours centre.
 ## L'ultrason ne donne qu'une distance : le robot ne sait pas sur quelle face il est pose. Il contourne donc la plus

@@ -7,9 +7,10 @@ extends RefCounted
 const ARRET_TOLERANCE_MM := 1.0   # arret declenche a 1 mm de la cible
 const HYSTERESIS_MM := 30.0       # l'obstacle doit s'eloigner de plus que ca pour repartir (= tolerance exigee)
 
-var recul_autorise := true        # recule si on s'est arrete trop pres (depassement)
-var seuil_recul_mm := 15.0        # recule si on est plus pres que cible - seuil (moitie de la tolerance)
-var vitesse_recul_mm_s := 40.0    # (= ancienne commande 10 a 4 mm/s par commande) vitesse de recul, en valeur absolue
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « arret »), lues au demarrage ; ici : type et justification seulement.
+@export var recul_autorise: bool  # recule si on s'est arrete trop pres (depassement)
+@export var seuil_recul_mm: float # recule si on est plus pres que cible - seuil (moitie de la tolerance)
+@export var vitesse_recul_mm_s: float # (= ancienne commande 10 a 4 mm/s par commande) vitesse de recul, en valeur absolue
 
 var arrete := false
 var en_recul := false

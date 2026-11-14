@@ -5,9 +5,10 @@
 class_name RepriseDouce
 extends RefCounted
 
-var duree_s := 1.0
-var vitesse_max_mm_s := 100.0     # (= ancienne commande 25 a 4 mm/s par commande)
-var braquage_max_deg_s := 120.0
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « reprise »), lues au demarrage ; ici : type et justification seulement.
+@export var duree_s: float
+@export var vitesse_max_mm_s: float # (= ancienne commande 25 a 4 mm/s par commande)
+@export var braquage_max_deg_s: float
 
 var _t := 0.0
 var _angle_prec := 90.0              # dernier angle commande (deg de servo)

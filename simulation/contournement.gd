@@ -52,63 +52,64 @@ extends RefCounted
 
 enum Phase { ECART, LONGER, RETOUR, RECHERCHE, CROISEMENT, ALIGNEMENT, ORBITE, SORTIE_ORBITE, TRAVERS }
 
-var actif := true                 # false = on s'arrete devant l'obstacle (test "Arret devant obstacle")
-var cote_par_defaut := 1          # 1 = par la droite, -1 = par la gauche (en ligne droite)
-var cote_interieur_virage := true # en virage, passer par l'interieur (la ligne revient vers la voiture)
-var seuil_virage_deg := 8.0       # braquage moyen (servo, par rapport a 90) au-dessus duquel on est en virage
-var vitesse_manoeuvre_mm_s := 100.0  # (= ancienne commande 25 a 4 mm/s par commande) Banc d'essai du 12 nov. : a la commande 40, la bille tombait dans 4 pistes sur 6 (braquage par paliers) ; 25 = valeur d'origine
+## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « contournement »), lues au demarrage ; ici : type et justification seulement.
+@export var actif: bool           # false = on s'arrete devant l'obstacle (test "Arret devant obstacle")
+@export var cote_par_defaut: int  # 1 = par la droite, -1 = par la gauche (en ligne droite)
+@export var cote_interieur_virage: bool # en virage, passer par l'interieur (la ligne revient vers la voiture)
+@export var seuil_virage_deg: float # braquage moyen (servo, par rapport a 90) au-dessus duquel on est en virage
+@export var vitesse_manoeuvre_mm_s: float # (= ancienne commande 25 a 4 mm/s par commande) Banc d'essai du 12 nov. : a la commande 40, la bille tombait dans 4 pistes sur 6 (braquage par paliers) ; 25 = valeur d'origine
 ## Hors de la ligne seulement (evitement) : distance d'arret avant d'eviter un obstacle.
 ## Sur la ligne, la sequence arret / recul / contournement utilise ReglagesEpreuve.
-var distance_manoeuvre_cm := 30.0
-var distance_securite_mm := 40.0  # arret d'urgence si un obstacle apparait tout pres pendant la manoeuvre
-var braquage_manoeuvre := 40.0    # degres de servo par rapport a 90 (max 45)
-var cap_evitement_deg := 40.0     # cap pris pour s'ecarter de la ligne (evitement hors ligne, sans verification)
+@export var distance_manoeuvre_cm: float
+@export var distance_securite_mm: float # arret d'urgence si un obstacle apparait tout pres pendant la manoeuvre
+@export var braquage_manoeuvre: float # degres de servo par rapport a 90 (max 45)
+@export var cap_evitement_deg: float # cap pris pour s'ecarter de la ligne (evitement hors ligne, sans verification)
 ## Sur la ligne : caps essayes par choisir_cap, du plus doux au plus serre (90 = perpendiculaire a la ligne).
-var caps_evitement_candidats_deg := [40.0, 50.0, 60.0, 70.0, 80.0, 90.0]
-var cap_retour_deg := 45.0        # cap pris pour revenir vers la ligne (45 plutot que 30 : on reste moins loin de la ligne)
-var gain_cap := 1.0               # degres de roue par degre d'erreur de cap
-var gain_lateral := 0.005         # rad de cap par mm d'ecart lateral (phase LONGER)
-var correction_laterale_max_deg := 10.0
+@export var caps_evitement_candidats_deg: Array
+@export var cap_retour_deg: float # cap pris pour revenir vers la ligne (45 plutot que 30 : on reste moins loin de la ligne)
+@export var gain_cap: float       # degres de roue par degre d'erreur de cap
+@export var gain_lateral: float   # rad de cap par mm d'ecart lateral (phase LONGER)
+@export var correction_laterale_max_deg: float
 # Detection pendant la manoeuvre
-var distance_vue_mm := 450.0      # en ECART, un echo plus proche que ca = l'obstacle est encore devant
-var distance_obstacle_suivant_mm := 300.0  # en LONGER / RETOUR, un echo plus proche = nouvel obstacle a eviter
-var echos_confirmation := 4       # pas consecutifs (a 50 Hz) avec echo brut : au moins 2 mesures de l'ultrason (20 Hz)
-var tolerance_memoire_mm := 40.0  # marge autour de la zone d'un obstacle deja contourne
-var marge_couloir_mm := 60.0      # en LONGER, une ligne vue plus loin que le couloir prevu + ca est ignoree...
-var largeur_passe_mm := 300.0     # ... sauf a hauteur de l'obstacle ou apres, jusqu'a couloir + ca (ligne en travers)
-var decalage_max_mm := 450.0      # au-dela, on abandonne (BLOQUE)
-var depassement_max_mm := 200.0   # en RETOUR, on depasse la position prevue de la ligne de ca avant de la chercher
-var recherche_max_deg := 150.0    # rotation maximale pendant la recherche de la ligne (si recherche_en_orbite = false)
+@export var distance_vue_mm: float # en ECART, un echo plus proche que ca = l'obstacle est encore devant
+@export var distance_obstacle_suivant_mm: float # en LONGER / RETOUR, un echo plus proche = nouvel obstacle a eviter
+@export var echos_confirmation: int # pas consecutifs (a 50 Hz) avec echo brut : au moins 2 mesures de l'ultrason (20 Hz)
+@export var tolerance_memoire_mm: float # marge autour de la zone d'un obstacle deja contourne
+@export var marge_couloir_mm: float # en LONGER, une ligne vue plus loin que le couloir prevu + ca est ignoree...
+@export var largeur_passe_mm: float # ... sauf a hauteur de l'obstacle ou apres, jusqu'a couloir + ca (ligne en travers)
+@export var decalage_max_mm: float # au-dela, on abandonne (BLOQUE)
+@export var depassement_max_mm: float # en RETOUR, on depasse la position prevue de la ligne de ca avant de la chercher
+@export var recherche_max_deg: float # rotation maximale pendant la recherche de la ligne (si recherche_en_orbite = false)
 # Recherche en orbite autour de l'obstacle
-var recherche_en_orbite := true
-var rayon_orbite_mm := 300.0      # essieu arriere -> centre de l'obstacle
-var gain_rayon_orbite := 0.004    # rad de cap par mm d'ecart au rayon
-var correction_orbite_max_deg := 35.0
-var arc_orbite_max_deg := 330.0   # tour presque complet ; ensuite une 2e orbite plus large, puis abandon (BLOQUE)
-var rayon_orbite_plus_mm := 150.0 # elargissement de la 2e orbite
+@export var recherche_en_orbite: bool
+@export var rayon_orbite_mm: float # essieu arriere -> centre de l'obstacle
+@export var gain_rayon_orbite: float # rad de cap par mm d'ecart au rayon
+@export var correction_orbite_max_deg: float
+@export var arc_orbite_max_deg: float # tour presque complet ; ensuite une 2e orbite plus large, puis abandon (BLOQUE)
+@export var rayon_orbite_plus_mm: float # elargissement de la 2e orbite
 ## Ligne entrante : points de la ligne vus par les sondes sur le dernier metre avant l'arret (repere de la manoeuvre),
 ## fournis par le controleur. Pendant l'orbite, une ligne vue a moins de distance_entrante_mm de ce chemin est celle
 ## par laquelle la voiture est arrivee : refusee, meme en virage (journal Godot : la voiture repartait vers le depart).
 var chemin_entrant: Array[Vector2] = []
-var distance_entrante_mm := 80.0
+@export var distance_entrante_mm: float
 ## SORTIE_ORBITE rend la main au PID des que le cap est a moins de ca de la direction "opposee a l'obstacle" :
 ## la ligne est deja sous les sondes, il suffit que le bon sens soit le plus proche des deux (journal Godot :
 ## a 35 deg, la voiture continuait de tourner plus d'une seconde avec la ligne sous les sondes).
-var sortie_orbite_tolerance_deg := 70.0
+@export var sortie_orbite_tolerance_deg: float
 # Direction de la ligne retrouvee (CROISEMENT)
-var distance_observation_mm := 40.0  # distance parcourue avant de juger la direction de la ligne
-var pente_ligne_tournee := -0.2      # glissement (mm de sondes par mm parcouru, vers le contournement) en dessous : a tourne
-var sortie_rapide_mm := 70.0         # ligne perdue apres moins que ca : vue sous un angle fort, elle a tourne
-var angle_ligne_tournee_deg := 15.0  # angle de la ligne balayee (par rapport au cap de depart) au-dela : a tourne
-var croisement_max_mm := 150.0       # ligne perdue depuis plus que ca en CROISEMENT : le PID reprend la main
+@export var distance_observation_mm: float # distance parcourue avant de juger la direction de la ligne
+@export var pente_ligne_tournee: float # glissement (mm de sondes par mm parcouru, vers le contournement) en dessous : a tourne
+@export var sortie_rapide_mm: float  # ligne perdue apres moins que ca : vue sous un angle fort, elle a tourne
+@export var angle_ligne_tournee_deg: float # angle de la ligne balayee (par rapport au cap de depart) au-dela : a tourne
+@export var croisement_max_mm: float # ligne perdue depuis plus que ca en CROISEMENT : le PID reprend la main
 # Ligne coupee de face (TRAVERS)
-var n_sondes_travers := 3
-var rotation_travers_min_deg := 35.0 # avant, la ligne encore sous les sondes est celle que l'on vient de couper
-var rotation_travers_max_deg := 150.0
+@export var n_sondes_travers: int
+@export var rotation_travers_min_deg: float # avant, la ligne encore sous les sondes est celle que l'on vient de couper
+@export var rotation_travers_max_deg: float
 # Dimensions (mm). Obstacle : ReglagesEpreuve, plus grande emprise possible (largeur + tolerance de centrage de chaque
 # cote, profondeur) : le bloc peut etre pose sur n'importe quelle face.
-var marge_laterale_mm := 40.0
-var marge_longitudinale_mm := 60.0
+@export var marge_laterale_mm: float
+@export var marge_longitudinale_mm: float
 
 var phase := Phase.ECART
 var cote := 1

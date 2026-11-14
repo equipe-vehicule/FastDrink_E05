@@ -71,15 +71,6 @@ var demi_tour := DemiTour.new()
 var reprise := RepriseDouce.new()
 var memoire := MemoireParcours.new(robot, odo)
 
-## Etape 5 (#67, 13 nov.) : rampe de la commande a l'acceleration seulement (cmd/s ; 0 = robot.rampe_cmd_par_s).
-## Le freinage garde robot.rampe_cmd_par_s (vitesse_freinage en depend : arret devant l'obstacle).
-## Cause visee : fin de la reprise douce apres un rattrapage, la commande passe de 25 a 45 en 0,16 s pendant que la
-## bille oscille encore (parcours fourni 0,96 ; demi_tour 0,99).
-## Avant le 13 nov. : 0 (125 cmd/s). Avec 60 : bille max 0,99 -> 0,82 (17 scenarios), 0,84 -> 0,80 (banc 40),
-## rattrapages 14 -> 10, temps +3 %. 40 et 25 essayes : voir LISEZMOI_SIMULATION.md (etape 5). Provisoire : depend de
-## la frequence propre de la bille (a mesurer sur le robot).
-var rampe_montee_cmd_par_s := 60.0
-
 # ----- Journal et diagnostic
 var distance_filtree_mm := -1.0      # derniere distance ultrason apres filtrage
 ## Banc d'essai : pourquoi le contournement fluide n'a pas ete utilise (nombre de fois par raison). N'influence pas
@@ -177,10 +168,10 @@ func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, d
 		cible = reprise.limiter_vitesse(cible)
 		angle = reprise.limiter_angle(angle, dt)
 	reprise.memoriser_angle(angle)
-	var rampe := robot.rampe_cmd_par_s
+	var rampe := robot.rampe_freinage_cmd_par_s
 	# Changement de sens (cible * _cmd < 0) : rampe de freinage, choix volontaire
-	if rampe_montee_cmd_par_s > 0.0 and absf(cible) > absf(_cmd) and cible * _cmd >= 0.0:
-		rampe = rampe_montee_cmd_par_s   # acceleration (en avant ou en arriere)
+	if robot.rampe_montee_cmd_par_s > 0.0 and absf(cible) > absf(_cmd) and cible * _cmd >= 0.0:
+		rampe = robot.rampe_montee_cmd_par_s   # acceleration (en avant ou en arriere)
 	_cmd = move_toward(_cmd, cible, rampe * dt)
 	var angle_servo := int(round(angle))
 	odo.suivre_servo(float(angle_servo), dt)              # toujours : angle reel du servo connu au debut d'une manoeuvre
@@ -374,7 +365,7 @@ func _demarrer_contournement(d_mm: float) -> void:
 		_noter_repli("place_insuffisante")
 	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_a_contourner_mm() / 2.0))
 	contournement.demarrer(d_mm, _braquage_moyen)
-	if not contournement.choisir_cap(d_mm):
+	if not contournement.choisir_cap(d_mm, fluide.marge_obstacle_mm):
 		# Aucune trajectoire ne passe (#72, choix de Mehdi du 13 nov.) : arret definitif plutot que contact.
 		# ARRET et non BLOQUE : BLOQUE repart des que la ligne est vue, et elle est sous la voiture.
 		_noter_repli("phases_sans_trajectoire")

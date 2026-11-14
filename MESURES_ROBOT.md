@@ -59,7 +59,7 @@ Les positions des sondes et de l'ultrason sont aussi dessinées dans le modèle 
 | Pertes de la bille (roulement) | 1 /s | `amortissement_bille_1_s` | #47 | À comparer au vrai robot |
 | Cuvette | rayon de courbure 140 mm, bord à 20 mm (plan `support_bille_v2` : R140, Ø40, unités non écrites) ; fréquence propre calculée ≈ 1,2 Hz | `rayon_cuvette_mm`, `rayon_bord_cuvette_mm` | #47 | À vérifier sur la pièce |
 | Fréquence de la boucle du programme sur le Pi | 50 Hz | `frequence_controle_hz` | #64 | À mesurer |
-| Rampe d'accélération (bille) | 60 commandes/s, soit 0,24 m/s² avec 4 mm/s par commande (choisie le 13 nov. sur le banc : bille max 0,99 → 0,82). Freinage : 125 commandes/s | hors fichier : `controleur.gd` `rampe_montee_cmd_par_s`, `reglages_robot.gd` `rampe_cmd_par_s` | #67 | À revoir avec la fréquence propre réelle de la bille et la vitesse réelle. Sensible au rayon de la cuvette : à 182 mm (+30 %), bille à 0,99 avec 60, chute avec 125 |
+| Rampe d'accélération (bille) | 60 commandes/s, soit 0,24 m/s² avec 4 mm/s par commande (choisie le 13 nov. sur le banc : bille max 0,99 → 0,82). Freinage : 125 commandes/s | hors fichier : `reglages_robot.gd` `rampe_montee_cmd_par_s` et `rampe_freinage_cmd_par_s` | #67 | À revoir avec la fréquence propre réelle de la bille et la vitesse réelle. Sensible au rayon de la cuvette : à 182 mm (+30 %), bille à 0,99 avec 60, chute avec 125 |
 
 ## Épreuve (à demander au professeur)
 

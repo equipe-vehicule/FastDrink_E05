@@ -20,6 +20,7 @@ const CLES_JSON := {
 	"vitesse_servo_deg_s": "vitesse_servo_deg_s",
 	"demi_angle_ultrason_deg": "demi_angle_ultrason_deg",
 	"mm_s_par_cmd": "vitesse_mm_s_par_cmd",
+	"frequence_controle_hz": "frequence_controle_hz",
 }
 
 # ----- Robot (reglages_robot.json)
@@ -33,9 +34,18 @@ var angle_roues_max_deg := 0.0    # angle reel des roues quand le servo est a 45
 var vitesse_servo_deg_s := 0.0    # vitesse du servo de direction (deg de servo par s ; 0 = instantane)
 var demi_angle_ultrason_deg := 0.0  # demi-ouverture du cone de l'ultrason
 var mm_s_par_cmd := 0.0           # vitesse reelle par unite de commande
+var frequence_controle_hz := 0.0  # frequence de la boucle du programme du robot (Hz ; 0 = a chaque pas physique)
 
 # ----- Algorithmes : moteur et freinage
-var rampe_cmd_par_s := 125.0      # limitation de l'acceleration (bille)
+var rampe_freinage_cmd_par_s := 125.0   # limitation de la commande au freinage (bille) ; vitesse_freinage() en depend
+## Etape 5 (#67, 13 nov.) : rampe de la commande a l'acceleration seulement (cmd/s ; 0 = rampe_freinage_cmd_par_s).
+## Le freinage garde rampe_freinage_cmd_par_s (vitesse_freinage en depend : arret devant l'obstacle).
+## Cause visee : fin de la reprise douce apres un rattrapage, la commande passe de 25 a 45 en 0,16 s pendant que la
+## bille oscille encore (parcours fourni 0,96 ; demi_tour 0,99).
+## Avant le 13 nov. : 0 (125 cmd/s). Avec 60 : bille max 0,99 -> 0,82 (17 scenarios), 0,84 -> 0,80 (banc 40),
+## rattrapages 14 -> 10, temps +3 %. 40 et 25 essayes : voir LISEZMOI_SIMULATION.md (etape 5). Provisoire : depend de
+## la frequence propre de la bille (a mesurer sur le robot).
+var rampe_montee_cmd_par_s := 60.0
 var marge_freinage := 0.6         # 0..1 : fraction de la rampe utilisee pour freiner
 var vitesse_approche_min := 8     # vitesse minimale d'approche (evite de caler avant la cible)
 
@@ -55,7 +65,7 @@ func avant_voiture_mm() -> float:
 ## Commande permettant encore de s'arreter sur restante_mm (deceleration constante :
 ## d = K * c^2 / (2 * rampe * marge)).
 func vitesse_freinage(restante_mm: float) -> float:
-	return sqrt(2.0 * rampe_cmd_par_s * marge_freinage * restante_mm / mm_s_par_cmd)
+	return sqrt(2.0 * rampe_freinage_cmd_par_s * marge_freinage * restante_mm / mm_s_par_cmd)
 
 ## Ecart du servo par rapport a 90 -> angle reel des roues (deg).
 func servo_vers_roues_deg(ecart_servo: float) -> float:

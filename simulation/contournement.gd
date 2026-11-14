@@ -65,8 +65,6 @@ var braquage_manoeuvre := 40.0    # degres de servo par rapport a 90 (max 45)
 var cap_evitement_deg := 40.0     # cap pris pour s'ecarter de la ligne (evitement hors ligne, sans verification)
 ## Sur la ligne : caps essayes par choisir_cap, du plus doux au plus serre (90 = perpendiculaire a la ligne).
 var caps_evitement_candidats_deg := [40.0, 50.0, 60.0, 70.0, 80.0, 90.0]
-var marge_verification_mm := 20.0 # marge de la verification geometrique (comme ContournementFluide.marge_obstacle_mm)
-var pas_prevision_s := 0.02       # pas de la prevision (boucle du programme a 50 Hz)
 var cap_retour_deg := 45.0        # cap pris pour revenir vers la ligne (45 plutot que 30 : on reste moins loin de la ligne)
 var gain_cap := 1.0               # degres de roue par degre d'erreur de cap
 var gain_lateral := 0.005         # rad de cap par mm d'ecart lateral (phase LONGER)
@@ -177,9 +175,10 @@ func demarrer(d0_mm: float, braquage_moyen: float) -> void:
 
 ## Sur la ligne, juste apres demarrer() : premier cap de caps_evitement_candidats_deg dont la manoeuvre prevue passe
 ## sans toucher l'obstacle (centre sur la ligne, plus grande emprise, tolerance de centrage). false : aucun ne passe.
-func choisir_cap(d0_mm: float) -> bool:
+## marge_mm : marge de la verification geometrique (le Controleur passe ContournementFluide.marge_obstacle_mm : une seule valeur).
+func choisir_cap(d0_mm: float, marge_mm: float) -> bool:
 	for cap_deg in caps_evitement_candidats_deg:
-		if _manoeuvre_libre(float(cap_deg), d0_mm):
+		if _manoeuvre_libre(float(cap_deg), d0_mm, marge_mm):
 			_cap_ecart_deg = cap_deg
 			return true
 	return false
@@ -187,13 +186,13 @@ func choisir_cap(d0_mm: float) -> bool:
 ## Rejoue ECART, LONGER et le debut du RETOUR avec les memes lois que _phase_ecart, _phase_longer et _phase_retour
 ## (cote droit ; le gauche est symetrique). Hypotheses : vitesse de manoeuvre des le depart (prudent : plus de chemin
 ## pendant que le servo braque), obstacle perdu par l'ultrason des le debut d'ECART, servo a sa vitesse nominale.
-func _manoeuvre_libre(cap_deg: float, d0_mm: float) -> bool:
-	var demi := _largeur_obstacle() / 2.0 + marge_verification_mm
+func _manoeuvre_libre(cap_deg: float, d0_mm: float, marge_mm: float) -> bool:
+	var demi := _largeur_obstacle() / 2.0 + marge_mm
 	var face := d0_mm + _robot.longueur_avant_mm
-	var obs_min := Vector2(-demi, face - marge_verification_mm)
-	var obs_max := Vector2(demi, face + _longueur_obstacle() + marge_verification_mm)
+	var obs_min := Vector2(-demi, face - marge_mm)
+	var obs_max := Vector2(demi, face + _longueur_obstacle() + marge_mm)
 	var v := vitesse_manoeuvre * _robot.mm_s_par_cmd
-	var dt := pas_prevision_s
+	var dt := 1.0 / _robot.frequence_controle_hz   # pas de la prevision = periode de la boucle du robot (doit etre > 0)
 	var p := Vector2.ZERO
 	var cap := 0.0
 	var servo := _odo.servo_estime

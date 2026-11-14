@@ -95,3 +95,64 @@ func _regler_couches(n: Node) -> void:
 				if c is CollisionShape3D:
 					c.shape = (n.get_parent() as MeshInstance3D).mesh.create_convex_shape(true, false)
 	for c in n.get_children(): _regler_couches(c)
+
+## Dernier point de la ligne (x, z en m, repere monde) : verification « arret en fin de ligne » du banc d'essai.
+## Piste generee : dernier point de la metadonnee « ligne ». Piste Blender : la ligne n'est pas exposee ; APPROXIMATION :
+## sommet du ruban (noeuds « Ruban* ») le plus eloigne du depart en suivant les aretes du maillage (distance le long du
+## ruban ; la distance a vol d'oiseau se trompe quand le ruban fait un coude). Valable pour un ruban qui ne se recoupe pas.
+## Retourne (NAN, NAN) si inconnu.
+func fin_de_ligne() -> Vector2:
+	if actuelle == null:
+		return Vector2(NAN, NAN)
+	if actuelle.has_meta("ligne"):
+		var ligne: PackedVector2Array = actuelle.get_meta("ligne")
+		return ligne[ligne.size() - 1] if ligne.size() > 0 else Vector2(NAN, NAN)
+	var points: Array[Vector3] = []     # sommets uniques (monde)
+	var index := {}                     # sommet arrondi au 0,1 mm -> numero
+	var voisins: Array = []             # numero -> [[numero voisin, longueur], ...]
+	for n in actuelle.find_children("Ruban*", "MeshInstance3D", true, false):
+		var m := n as MeshInstance3D
+		var faces := m.mesh.get_faces()
+		for t in range(0, faces.size() - 2, 3):
+			var num: Array[int] = []
+			for k in 3:
+				var q := m.global_transform * faces[t + k]
+				var cle := Vector3i(roundi(q.x * 10000.0), roundi(q.y * 10000.0), roundi(q.z * 10000.0))
+				if not index.has(cle):
+					index[cle] = points.size()
+					points.append(q)
+					voisins.append([])
+				num.append(index[cle])
+			for k in 3:
+				var a := num[k]
+				var b := num[(k + 1) % 3]
+				if a != b:
+					var l := points[a].distance_to(points[b])
+					voisins[a].append([b, l])
+					voisins[b].append([a, l])
+	if points.is_empty():
+		return Vector2(NAN, NAN)
+	var depart := transform_depart().origin
+	var source := 0
+	for i in points.size():
+		if points[i].distance_squared_to(depart) < points[source].distance_squared_to(depart):
+			source = i
+	var dist := PackedFloat64Array()
+	dist.resize(points.size())
+	dist.fill(INF)
+	dist[source] = 0.0
+	var file: Array[int] = [source]     # plus courts chemins (relaxations successives)
+	var tete := 0
+	while tete < file.size():
+		var a := file[tete]
+		tete += 1
+		for v in voisins[a]:
+			var d := dist[a] + float(v[1])
+			if d < dist[v[0]]:
+				dist[v[0]] = d
+				file.append(v[0])
+	var fin := source
+	for i in points.size():
+		if not is_inf(dist[i]) and dist[i] > dist[fin]:
+			fin = i
+	return Vector2(points[fin].x, points[fin].z)

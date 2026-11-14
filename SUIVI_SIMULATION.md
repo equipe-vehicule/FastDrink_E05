@@ -46,8 +46,8 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 - [ ] Ligne droite après l'obstacle (`droite_apres_min` = 0,60 m, hypothèse) : le retour du contournement du pire cas finit environ 0,68 m après l'arrière d'un bloc de 50 de profondeur (perte de ligne de 0,6 s dans `obstacle_avant_virage`) ; à confirmer avec le professeur (#56).
 - [ ] Écho du sol sur l'ultrason (cône vertical, capteur à 60 mm) : non simulé, à mesurer (#53).
 - [x] Pertes de ligne dans les virages de 120 mm (#74) : inévitables avec les sondes à 217 mm devant l'essieu (rayon minimal décrit par la barre : 257 mm), rattrapées en marche arrière. Nombre de rattrapages inchangé avec la rampe de 60 (2 dans `courbes_120`, 4 sur le parcours fourni).
-- [x] Bille après un rattrapage (#67) : rampe d'accélération séparée (`controleur.gd` `rampe_montee_cmd_par_s` = 60, provisoire) ; bille max 0,99 → 0,82 sur les scénarios.
-- [ ] Fin de ligne non reconnue (`courbes_120` sans la rampe de 60) : la voiture reprend la ligne en sens inverse ; le banc ne vérifie pas où a lieu un BLOQUE (contrôle « fin de ligne atteinte » à ajouter).
+- [x] Bille après un rattrapage (#67) : rampe d'accélération séparée (`reglages_robot.gd` `rampe_montee_cmd_par_s` = 60, provisoire) ; bille max 0,99 → 0,82 sur les scénarios.
+- [ ] Fin de ligne non reconnue (`courbes_120` sans la rampe de 60) : la voiture reprend la ligne en sens inverse ; contrôle « fin de ligne atteinte » ajouté au banc le 13 nov. (raison `bloque_loin_fin_ligne`, seuil 150 mm = hypothèse).
 - [ ] Rampe d'accélération : à revoir avec la fréquence propre réelle de la bille et la vitesse réelle par commande.
 - [ ] Retour sur la ligne après le contournement fluide : arrivée avec un angle jusqu'à ~29° (piste 4), sans perte de ligne mais à adoucir.
 

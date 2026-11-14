@@ -80,7 +80,7 @@ controleur.contourner_obstacles → controleur.contournement.actif
 controleur.cote_contournement, distance_manoeuvre_cm… → controleur.contournement.…
 controleur.distance_arret_cm, decalage_capteur_mm → controleur.arret.…
 controleur.recul_auto_mm, attente_avant_recul_s → controleur.recul.distance_auto_mm, attente_auto_s
-controleur.mm_s_par_cmd, empattement_mm, rampe_cmd_par_s… → controleur.robot.…
+controleur.mm_s_par_cmd, empattement_mm, rampe_freinage_cmd_par_s, rampe_montee_cmd_par_s… → controleur.robot.…
 À vérifier : ce découpage n'a pas encore été testé dans Godot. À comparer avec l'ancienne version sur une piste connue (par exemple « Contournement ») avant de la remplacer définitivement.
 
 Points à surveiller
@@ -446,7 +446,9 @@ Les deux pics ont la même cause (journaux détaillés) :
 - `parcours_fourni` (0,96) : la bille oscille encore après l'arrêt du rattrapage, puis la reprise douce se termine (1 s après le rattrapage). La commande passe alors de 25 à 45 en 0,16 s (rampe de 125 cmd/s, environ 0,5 m/s²) ;
 - `demi_tour` (0,99) : même déroulement, de 25 à 55.
 
-Correction : rampe séparée pour l'accélération, `rampe_montee_cmd_par_s` (`controleur.gd`). Le freinage garde `rampe_cmd_par_s` = 125, dont dépend la distance d'arrêt devant l'obstacle.
+Correction : rampe séparée pour l'accélération, `rampe_montee_cmd_par_s` (`reglages_robot.gd`, avec `rampe_freinage_cmd_par_s` = 125, ex-`rampe_cmd_par_s`, dont dépend la distance d'arrêt devant l'obstacle). Réglage d'un essai : `--reglage=robot:rampe_montee_cmd_par_s=40` ou `reglages_essai` `{"robot:rampe_montee_cmd_par_s": 40}` (idem `robot:rampe_freinage_cmd_par_s` ; les clés `robot:` absentes de `reglages_robot.json` s'appliquent au contrôleur seulement).
+
+Nettoyage du 13 nov. (sans changement de comportement) : candidats C2 à C4 retirés de `suivi_ligne.gd` (résultats ci-dessus conservés) ; fréquence de la boucle (`frequence_controle_hz`, `reglages_robot.json`) lue par `contournement.gd` (pas de la prévision) et fournie à `mesures_stabilite.gd` par le banc ; `choisir_cap` reçoit `fluide.marge_obstacle_mm` : **un seul réglage de marge** (un essai `fluide:marge_obstacle_mm` change maintenant aussi la vérification du contournement par phases) ; le banc contrôle la « fin de ligne atteinte » des scénarios BLOQUE (`distance_fin_ligne_max_mm` = 150 mm, hypothèse ; fin du ruban d'une piste Blender = sommet le plus éloigné du départ le long du maillage, approximation).
 
 | Rampe d'accélération | 6 cas : bille max | Rattrapages | Temps |
 | --- | --- | --- | --- |
@@ -493,7 +495,7 @@ La rampe de 60 garde l'avantage. Avec une cuvette plus plate, la marge devient t
 
 **Ce qui a changé :**
 - `simulation/geometrie_voiture.gd` (nouveau, module pur) : test « rectangle de la voiture contre rectangle de l'obstacle » (coins de l'une dans l'autre, dans les deux sens). Sorti de `ContournementFluide._trajectoire_libre`, qui l'appelle maintenant (17 scénarios identiques à la référence).
-- `contournement.gd` : `choisir_cap(d0_mm)` simule à l'avance ECART, LONGER et le début du RETOUR avec les mêmes lois que la manœuvre (servo à sa vitesse, vitesse de manœuvre), pour chaque cap de `caps_evitement_candidats_deg` (40 à 90°, du plus doux au plus serré), contre l'obstacle élargi de `marge_verification_mm` (20 mm). Le premier cap qui passe est gardé.
+- `contournement.gd` : `choisir_cap(d0_mm, marge_mm)` simule à l'avance ECART, LONGER et le début du RETOUR avec les mêmes lois que la manœuvre (servo à sa vitesse, vitesse de manœuvre), pour chaque cap de `caps_evitement_candidats_deg` (40 à 90°, du plus doux au plus serré), contre l'obstacle élargi de `marge_mm` (= `ContournementFluide.marge_obstacle_mm`, 20 mm). Le premier cap qui passe est gardé.
 - `controleur.gd` : si aucun cap ne passe, arrêt sûr en **ARRET**, raison `phases_sans_trajectoire` (choix de Mehdi : s'arrêter plutôt que reculer davantage). ARRET et non BLOQUE : BLOQUE repart dès que la ligne est vue, et elle est sous la voiture.
 - Scénarios ajoutés (D_recul 50) : `recul_court_debout`, `recul_court_flanc` (bloc de 150 décalé de 10 mm, cas de la graine 63353), `recul_court_deux_obstacles`.
 

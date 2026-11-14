@@ -20,8 +20,10 @@ const Scenarios := preload("res://simulation/scenarios.gd")
 @export var journal_au_demarrage := false
 ## Essais : reglages appliques a chaque depart, ex. {"suivi:vitesse_max": 55, "robot:vitesse_servo_deg_s": 200}.
 ##   "<module>:<reglage>" : reglage du controleur ; "<reglage>" seul : reglage du controleur lui-meme
-##       (ex. "rampe_montee_cmd_par_s") ;
+##       (ex. "recul_fin_ligne_mm") ;
 ##   "robot:<cle de reglages_robot.json>" : valeur du robot, pour le modele ET le controleur (lue au lancement).
+##   "robot:<champ de ReglagesRobot>" hors du fichier : reglage du controleur seulement (ex. "robot:rampe_montee_cmd_par_s",
+##       "robot:rampe_freinage_cmd_par_s").
 @export var reglages_essai: Dictionary = {}
 ## Banc d'essai : nombre de pistes aleatoires a enchainer automatiquement (0 = desactive). Resultats : journaux/banc_*.csv
 @export var banc_essai_pistes := 0
@@ -98,8 +100,7 @@ func _lire_reglages_robot() -> void:
 		var cle := texte.trim_prefix("robot:")
 		if reglages_robot.has(cle):
 			reglages_robot[cle] = reglages_essai[chemin]
-		else:
-			push_error("reglages_essai : « %s » n'existe pas dans reglages_robot.json." % cle)
+		# sinon : champ de ReglagesRobot hors du fichier (ex. robot:rampe_montee_cmd_par_s), applique par _controleur_regle
 	frequence_controle_hz = float(reglages_robot.get("frequence_controle_hz", 0.0))
 
 ## Le fichier de reglages et le modele 3D (positions des pieces dans picar.glb) doivent decrire le meme robot :
@@ -172,12 +173,14 @@ func _charger_cas_suivant() -> void:
 		if cas is Dictionary:
 			if charger_scenario(cas):
 				banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
+				banc.fin_ligne = pistes.fin_de_ligne()
 				return
 			banc.noter_invalide()
 		else:
 			_reglages_cas = {}
 			charger_piste(Pistes.INDEX_ALEATOIRE, cas)
 			banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
+			banc.fin_ligne = pistes.fin_de_ligne()
 			return
 	if _quitter_a_la_fin:
 		get_tree().quit.call_deferred()
@@ -231,8 +234,8 @@ func _controleur_regle() -> Controleur:
 	var essai := reglages_essai.duplicate()
 	essai.merge(_reglages_cas, true)
 	for chemin in essai:
-		if String(chemin).begins_with("robot:"):
-			continue   # deja dans reglages_robot
+		if String(chemin).begins_with("robot:") and reglages_robot.has(String(chemin).trim_prefix("robot:")):
+			continue   # cle de reglages_robot.json : deja dans reglages_robot
 		if c.get_indexed(NodePath(chemin)) == null:
 			push_error("reglages_essai : « %s » ne correspond a aucun reglage du controleur." % chemin)
 			continue

@@ -34,6 +34,12 @@ var scenarios: Array = []
 ## Obstacles de la piste en cours : [x, z, largeur, profondeur, angle] (m, rad), metadonnee « obstacles » de
 ## ConstructionPiste. Vide pour une piste Blender. A donner apres chaque chargement de piste.
 var obstacles: Array = []
+## Dernier point de la ligne de la piste en cours (x, z en m ; NAN = inconnu), Pistes.fin_de_ligne(). A donner apres chaque
+## chargement de piste. Sert au controle « fin de ligne atteinte » des scenarios dont fin_attendue vaut BLOQUE.
+var fin_ligne := Vector2(NAN, NAN)
+## HYPOTHESE (non issue d'une exigence) : fin_attendue = BLOQUE seulement si la barre de sondes est a moins de ca du
+## dernier point de la ligne au moment de l'arret ; sinon la voiture s'est bloquee en route (ECHEC « bloque_loin_fin_ligne »).
+var distance_fin_ligne_max_mm := 150.0
 
 var termine := false
 var _i := 0
@@ -58,6 +64,7 @@ var _perte_apres_max := 0.0
 var _perte_ailleurs_max := 0.0
 var _pertes_ailleurs := 0
 var _fin_attendue := "ARRIVEE"    # resultat attendu (scenario « fin_attendue », ARRIVEE par defaut)
+var _distance_fin_ligne_mm := NAN  # mm, barre de sondes -> fin de la ligne a l'arret (NAN = non controlee)
 var _fins_sans_ligne := 0
 
 func demarrer() -> void:
@@ -100,6 +107,7 @@ func _reinitialiser() -> void:
 			"RETROUVER": 0, "BLOQUE": 0}
 	_etat_prec = ""
 	_erreur_arret_max = 0.0
+	_distance_fin_ligne_mm = NAN
 	_reculs.clear()
 	_fin_contournement = -INF
 	_debut_perte = -1.0
@@ -162,6 +170,19 @@ static func _texte_raisons(d: Dictionary) -> String:
 		t.append("%s:%d" % [k, d[k]])
 	return ";".join(t)
 
+## Fin de ligne atteinte : distance (mm) de la barre de sondes au dernier point de la ligne, mesuree a l'arret d'un
+## scenario dont fin_attendue vaut BLOQUE. NAN = non controle (autre fin attendue, autre resultat, ligne inconnue).
+func _mesurer_fin_ligne(v: Vehicule, c: Controleur) -> float:
+	if _fin_attendue != "BLOQUE" or is_nan(fin_ligne.x):
+		return NAN
+	var t := v.global_transform
+	var essieu := t.origin + t.basis.z * (v.empattement / 2.0)
+	var sondes := essieu - t.basis.z * (c.robot.distance_sondes_mm / 1000.0)
+	return Vector2(sondes.x, sondes.z).distance_to(fin_ligne) * 1000.0
+
+func _texte_fin_ligne() -> String:
+	return "" if is_nan(_distance_fin_ligne_mm) else " (fin de ligne a %.0f mm)" % _distance_fin_ligne_mm
+
 ## Verdict selon le guide (section 1) et les precisions du 12 nov. : arrivee, sans collision ni chute, arret a
 ## +/- TOLERANCE_ARRET_MM, recul de moins de RECUL_MAX_MM, et un arret et un recul devant CHAQUE obstacle.
 func _raisons_echec(resultat: String, nb_obstacles: int) -> PackedStringArray:
@@ -174,6 +195,8 @@ func _raisons_echec(resultat: String, nb_obstacles: int) -> PackedStringArray:
 		r.append("arret a %.0f mm de la cible" % _erreur_arret_max)
 	if not _reculs.is_empty() and _reculs.max() >= ReglagesEpreuve.RECUL_MAX_MM:
 		r.append("recul de %.0f mm" % _reculs.max())
+	if not is_nan(_distance_fin_ligne_mm) and _distance_fin_ligne_mm > distance_fin_ligne_max_mm:
+		r.append("bloque_loin_fin_ligne")
 	if _compteurs["DECISION"] != nb_obstacles:
 		r.append("%d arret(s) pour %d obstacle(s)" % [_compteurs["DECISION"], nb_obstacles])
 	if _reculs.size() != nb_obstacles:
@@ -193,7 +216,7 @@ func _afficher(resultat: String, temps: float, raisons: PackedStringArray, s: Di
 	print("CAS %-22s | %-5s | %6.1f s | bille max %.2f | collision %d | marge obstacle %s | err arret %4.1f mm | recul %s mm | activite %5.1f deg/m | oscillation en droite %s | braquage a f bille (%.2f Hz) %s | %s" % [
 		cas, "OK" if raisons.is_empty() else "ECHEC", temps, _marge_max, int(_collision), marge, _erreur_arret_max,
 		_texte_recul(_reculs.max()), s["braquage_activite_deg_m"], oscillation, s["f_bille_hz"], excitation,
-		"; ".join(raisons) if not raisons.is_empty() else resultat])
+		"; ".join(raisons) if not raisons.is_empty() else resultat + _texte_fin_ligne()])
 
 ## Scenario invalide (piste impossible a construire) : une ligne ECHEC, puis cas suivant.
 func noter_invalide() -> void:
@@ -282,6 +305,7 @@ func suivre(temps: float, dt: float, v: Vehicule, bille: BilleCuvette, c: Contro
 	_mesurer_ligne(temps, etat, v, c)
 	_etat_prec = etat
 	_stabilite.f_bille_hz = bille.frequence_propre_hz()
+	_stabilite.f_echantillon_hz = c.robot.frequence_controle_hz
 	_stabilite.ajouter(temps, dt, rad_to_deg(v.angle_roues_rad()), v.distance_parcourue, bille.taux_bord(),
 			etat == "SUIVI", _en_droite(v, c, g))
 	var resultat := ""
@@ -298,6 +322,7 @@ func suivre(temps: float, dt: float, v: Vehicule, bille: BilleCuvette, c: Contro
 	if _debut_perte >= 0.0:
 		_fermer_perte(temps)
 	var s := _stabilite.resultat()
+	_distance_fin_ligne_mm = _mesurer_fin_ligne(v, c)
 	var raisons := _raisons_echec(resultat, nb_obstacles)
 	if raisons.is_empty():
 		_ok += 1

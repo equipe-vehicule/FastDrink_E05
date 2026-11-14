@@ -18,7 +18,6 @@
 ##   - Sans segment assez long, la mesure vaut NAN (« non mesure »), pas 0.
 extends RefCounted
 
-const FREQ_ECHANTILLON_HZ := 50.0   # le braquage est re-echantillonne a la frequence de la boucle du robot
 const FENETRE_TENDANCE_S := 2.0
 const SEGMENT_MIN_S := 4.0          # 2 fenetres de tendance : en dessous, le retrait de la tendance n'a pas de sens
 const F_MIN := 0.25
@@ -28,6 +27,9 @@ const DEMI_BANDE_BILLE_HZ := 0.3
 const AMPLITUDE_MIN_DEG := 0.05     # en dessous : aucune oscillation (frequence dominante non definie)
 
 var f_bille_hz := 0.0               # frequence propre de la bille (BilleCuvette.frequence_propre_hz)
+## Frequence a laquelle le braquage est re-echantillonne (Hz) = frequence de la boucle du robot (ReglagesRobot.frequence_controle_hz),
+## fournie par qui appelle ; doit etre > 0.
+var f_echantillon_hz := 0.0
 
 var _angle_prec := NAN
 var _somme_variations := 0.0        # deg
@@ -40,24 +42,24 @@ var _n_marge := 0
 var _suivi := _Segments.new()      # tout le suivi : excitation de la bille
 var _droite := _Segments.new()     # suivi en ligne droite : oscillation du suivi
 
-## Segments d'un signal re-echantillonne a FREQ_ECHANTILLON_HZ.
+## Segments d'un signal re-echantillonne a f_hz (Hz, fourni par MesuresStabilite.f_echantillon_hz).
 class _Segments:
 	var actuel: PackedFloat32Array = []
 	var t_prochain := 0.0
 	var finis: Array[PackedFloat32Array] = []
 
-	func ajouter(t: float, valeur: float, actif: bool) -> void:
+	func ajouter(t: float, valeur: float, actif: bool, f_hz: float) -> void:
 		if not actif:
-			fermer()
+			fermer(f_hz)
 			return
 		if actuel.is_empty():
 			t_prochain = t
 		if t >= t_prochain - 1e-9:
 			actuel.append(valeur)
-			t_prochain += 1.0 / FREQ_ECHANTILLON_HZ
+			t_prochain += 1.0 / f_hz
 
-	func fermer() -> void:
-		if actuel.size() >= int(SEGMENT_MIN_S * FREQ_ECHANTILLON_HZ):
+	func fermer(f_hz: float) -> void:
+		if actuel.size() >= int(SEGMENT_MIN_S * f_hz):
 			finis.append(actuel)
 		actuel = PackedFloat32Array()
 
@@ -89,13 +91,13 @@ func ajouter(t: float, dt: float, angle_deg: float, distance_m: float, marge: fl
 	_distance_prec = distance_m
 	_somme_marge += marge
 	_n_marge += 1
-	_suivi.ajouter(t, angle_deg, en_suivi)
-	_droite.ajouter(t, angle_deg, en_suivi and en_droite)
+	_suivi.ajouter(t, angle_deg, en_suivi, f_echantillon_hz)
+	_droite.ajouter(t, angle_deg, en_suivi and en_droite, f_echantillon_hz)
 
 ## Resultats de l'essai (cles = colonnes du banc d'essai).
 func resultat() -> Dictionary:
-	_suivi.fermer()
-	_droite.fermer()
+	_suivi.fermer(f_echantillon_hz)
+	_droite.fermer(f_echantillon_hz)
 	var f_dom := NAN
 	var amp_dom := NAN
 	for s in _droite.finis:
@@ -125,9 +127,9 @@ func resultat() -> Dictionary:
 	}
 
 ## Signal moins sa moyenne glissante centree (FENETRE_TENDANCE_S ; fenetre raccourcie aux bords).
-static func _sans_tendance(x: PackedFloat32Array) -> PackedFloat32Array:
+func _sans_tendance(x: PackedFloat32Array) -> PackedFloat32Array:
 	var n := x.size()
-	var demi := int(FENETRE_TENDANCE_S * FREQ_ECHANTILLON_HZ / 2.0)
+	var demi := int(FENETRE_TENDANCE_S * f_echantillon_hz / 2.0)
 	var cumul := PackedFloat64Array()
 	cumul.resize(n + 1)
 	cumul[0] = 0.0
@@ -143,7 +145,7 @@ static func _sans_tendance(x: PackedFloat32Array) -> PackedFloat32Array:
 
 ## Spectre d'amplitude (deg) aux frequences F_MIN, F_MIN + PAS_F, ..., F_MAX, fenetre de Hann.
 ## Amplitude d'une sinusoide pure = sa valeur crete.
-static func _spectre(x: PackedFloat32Array) -> PackedFloat32Array:
+func _spectre(x: PackedFloat32Array) -> PackedFloat32Array:
 	var n := x.size()
 	var w := PackedFloat32Array()
 	w.resize(n)
@@ -155,7 +157,7 @@ static func _spectre(x: PackedFloat32Array) -> PackedFloat32Array:
 	var a := PackedFloat32Array()
 	a.resize(nb_f)
 	for k in nb_f:
-		var omega := TAU * (F_MIN + k * PAS_F) / FREQ_ECHANTILLON_HZ
+		var omega := TAU * (F_MIN + k * PAS_F) / f_echantillon_hz
 		var re := 0.0
 		var im := 0.0
 		for i in n:

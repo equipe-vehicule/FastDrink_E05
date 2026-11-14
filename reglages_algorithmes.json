@@ -6,7 +6,8 @@
 		"hors_ligne_apres_s": 0.5,
 		"portee_hors_ligne_mm": 500.0,
 		"echos_hors_ligne": 4,
-		"contresens_max_mm": 70.0
+		"contresens_max_mm": 70.0,
+		"arret_urgence_max_s": 3.0
 	},
 	"robot": {
 		"deceleration_freinage_mm_s2": 500.0,

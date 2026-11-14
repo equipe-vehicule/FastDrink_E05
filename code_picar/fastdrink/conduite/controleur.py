@@ -79,6 +79,11 @@ class Controleur:
         "portee_hors_ligne_mm": float,  # hors ligne, tout écho plus proche que ça est sur son chemin
         "echos_hors_ligne": int,        # pas consécutifs avec écho brut avant d'interrompre une orbite ou une recherche
         "contresens_max_mm": float,     # distance parcourue à contresens sur la ligne avant le demi-tour
+        # HYPOTHESE (14 nov., Mehdi) : doit depasser absence_proche_s (1,0 s : le filtre garde un obstacle a moins de
+        # 60 mm jusqu'a 1 s sans echo, un delai plus court couperait une manoeuvre normale sur un echo perdu) ; 2 s de
+        # plus pour un obstacle passager (main), sans mesure ; a verifier sur le robot. Raison : sur le robot, un faux
+        # echo persistant sous 40 mm gelait la manoeuvre indefiniment (relecture du portage, 14 nov.).
+        "arret_urgence_max_s": float,   # arrêt d'urgence continu (écho sous distance_securite_mm) au-delà de ça : la manœuvre se termine
     }
 
     def __init__(self):
@@ -89,6 +94,7 @@ class Controleur:
         self.portee_hors_ligne_mm = 0.0
         self.echos_hors_ligne = 0
         self.contresens_max_mm = 0.0
+        self.arret_urgence_max_s = 0.0
 
         # ----- Modules (leurs réglages s'écrivent par ex. controleur.suivi.kp = 2.0,
         # controleur.epreuve.distance_recul_mm = 150)
@@ -115,6 +121,7 @@ class Controleur:
 
         self._etat = Etat.SUIVI
         self._t_etat = 0.0
+        self._t_urgence = 0.0                # durée continue de l'arrêt d'urgence en cours (s)
         self._t_arret = 0.0
         self._v_mm_s = 0.0                   # vitesse de consigne actuelle (mm/s, après rampe) ; la commande en sort par la table
         self._braquage_moyen = 0.0           # servo - 90, moyenne glissante pendant le suivi (> 0 = virage à droite)
@@ -151,11 +158,16 @@ class Controleur:
                                                                               constantes.Phase.SORTIE_ORBITE]:
             # un tour d'orbite dure plus longtemps qu'une phase ordinaire
             self._t_etat = gd.minf(self._t_etat, self.TIMEOUT_ETAT_S / 2.0)
-        if self._en_manoeuvre() and self._t_etat > self.TIMEOUT_ETAT_S:
-            if self._etat == Etat.CONTOURNEMENT and self.memoire.ligne:
-                self._lancer_retrouver()
-            else:
-                self._changer_etat(Etat.BLOQUE)
+        if self._en_manoeuvre() and (self._t_etat > self.TIMEOUT_ETAT_S or self._t_urgence > self.arret_urgence_max_s):
+            self._terminer_manoeuvre_trop_longue()
+
+    def _terminer_manoeuvre_trop_longue(self):
+        """Fin d'une manœuvre trop longue (timeout ou arrêt d'urgence trop long) : recherche de la ligne si on l'a en
+        mémoire après un contournement, sinon arrêt de sécurité."""
+        if self._etat == Etat.CONTOURNEMENT and self.memoire.ligne:
+            self._lancer_retrouver()
+        else:
+            self._changer_etat(Etat.BLOQUE)
 
     def _commande_selon_etat(self, sondes, somme, n, d_mm, distance_cm, dt):
         """Retourne Vec2(angle servo, vitesse cible) demandés par l'algorithme de l'état courant."""
@@ -202,8 +214,10 @@ class Controleur:
         # Arrêt d'urgence pendant une manœuvre (obstacle imprévu tout près) : on attend, sans faire courir le timeout
         if self._en_manoeuvre() and cible > 0.0 and d_mm >= 0.0 and d_mm < self.contournement.distance_securite_mm:
             cible = 0.0
+            self._t_urgence += dt            # compte la durée de l'arrêt ; _verifier_duree_manoeuvre() y met fin au tour suivant
         else:
             self._t_etat += dt
+            self._t_urgence = 0.0
         angle = gd.clampf(angle, ReglagesRobot.ANGLE_MIN, ReglagesRobot.ANGLE_MAX)
         if self.reprise.en_cours(self._etat == Etat.SUIVI, dt):
             cible = self.reprise.limiter_vitesse(cible)
@@ -478,6 +492,7 @@ class Controleur:
             self.reprise.demarrer()
         self._etat = e
         self._t_etat = 0.0
+        self._t_urgence = 0.0
         if e == Etat.SUIVI:
             self.memoire.nouveau_passage()
             self.rattrapage.nouveau_suivi()

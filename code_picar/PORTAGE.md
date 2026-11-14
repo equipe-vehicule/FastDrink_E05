@@ -78,6 +78,8 @@ Non portés (simulation seulement) : `simulation.gd`, `vehicule.gd`, `bille_cuve
 | `realiste_graine_79191_recul_50` | 3000 | D_recul 50 : contournements par phases enchaînés |
 | `realiste_epingle_180_retrouver` | 1322 | RETROUVER : rattrapage désactivé par réglages d'essai (enregistrés dans l'en-tête) |
 
+Arrêt d'urgence en manœuvre (`arret_urgence_max_s`, 14 nov.) : aucun banc ne l'atteint ; `tests/test_arret_urgence.py` rejoue 3 séries d'entrées enregistrées par `tests/outils/sonde_arret_urgence.gd` (états et sorties identiques à Godot, fin de manœuvre à 3 s, arrêt de 2,9 s sans effet). Une trace dont l'en-tête n'a pas cette clé la laisse à 0,0 en Python : toujours régénérer les traces après l'ajout d'un réglage.
+
 Non couverts par les traces (aucun banc ne les atteint) : DEMI_TOUR (tests unitaires seulement), BLOQUE et ARRET en cours de route, RECUL_LIGNE de la piste « Recul », évitements hors ligne, surveillance du contresens. ORBITE, SORTIE_ORBITE, RECHERCHE, TRAVERS et CROISEMENT sont couverts par `test_lot_b` (entrées pseudo-aléatoires comparées aux valeurs calculées par Godot) ; ALIGNEMENT par les traces.
 
 ## Trois lots indépendants (fichiers disjoints) – portés le 14 nov., rejeu des 7 traces identique

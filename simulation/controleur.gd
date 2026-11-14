@@ -57,6 +57,11 @@ const LISSAGE_BRAQUAGE_S := 0.5      # constante de temps du braquage moyen (det
 @export var portee_hors_ligne_mm: float # hors ligne, tout echo plus proche que ca est sur son chemin
 @export var echos_hors_ligne: int    # pas consecutifs avec echo brut avant d'interrompre une orbite ou une recherche
 @export var contresens_max_mm: float # distance parcourue a contresens sur la ligne avant le demi-tour
+# HYPOTHESE (14 nov., Mehdi) : doit depasser absence_proche_s (1,0 s : le filtre garde un obstacle a moins de 60 mm
+# jusqu'a 1 s sans echo, un delai plus court couperait une manoeuvre normale sur un echo perdu) ; 2 s de plus pour
+# un obstacle passager (main), sans mesure ; a verifier sur le robot. Raison : sur le robot, un faux echo
+# persistant sous 40 mm gelait la manoeuvre indefiniment (relecture du portage, 14 nov.).
+@export var arret_urgence_max_s: float # arret d'urgence continu (echo sous distance_securite_mm) au-dela de ca : la manoeuvre se termine
 
 # ----- Modules (leurs reglages s'ecrivent par ex. controleur.suivi.kp = 2.0, controleur.epreuve.distance_recul_mm = 150)
 var robot := ReglagesRobot.new()
@@ -82,6 +87,7 @@ var raisons_repli := {}
 
 var _etat := Etat.SUIVI
 var _t_etat := 0.0
+var _t_urgence := 0.0                # duree continue de l'arret d'urgence en cours (s)
 var _t_arret := 0.0
 var _v_mm_s := 0.0                   # vitesse de consigne actuelle (mm/s, apres rampe) ; la commande en sort par la table
 var _braquage_moyen := 0.0           # servo - 90, moyenne glissante pendant le suivi (> 0 = virage a droite)
@@ -117,11 +123,17 @@ func calculer(sondes: Array, distance_cm: float, dt: float, mesure_nouvelle := t
 func _verifier_duree_manoeuvre() -> void:
 	if _etat == Etat.CONTOURNEMENT and contournement.phase in [Contournement.Phase.ORBITE, Contournement.Phase.SORTIE_ORBITE]:
 		_t_etat = minf(_t_etat, TIMEOUT_ETAT_S / 2.0)   # un tour d'orbite dure plus longtemps qu'une phase ordinaire
-	if _en_manoeuvre() and _t_etat > TIMEOUT_ETAT_S:
-		if _etat == Etat.CONTOURNEMENT and not memoire.ligne.is_empty():
-			_lancer_retrouver()
-		else:
-			_changer_etat(Etat.BLOQUE)
+	if _en_manoeuvre() and (_t_etat > TIMEOUT_ETAT_S or _t_urgence > arret_urgence_max_s):
+		_terminer_manoeuvre_trop_longue()
+
+
+## Fin d'une manoeuvre trop longue (timeout ou arret d'urgence trop long) : recherche de la ligne si on l'a en memoire
+## apres un contournement, sinon arret de securite.
+func _terminer_manoeuvre_trop_longue() -> void:
+	if _etat == Etat.CONTOURNEMENT and not memoire.ligne.is_empty():
+		_lancer_retrouver()
+	else:
+		_changer_etat(Etat.BLOQUE)
 
 
 ## Retourne Vector2(angle servo, vitesse cible) demandes par l'algorithme de l'etat courant.
@@ -170,8 +182,10 @@ func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, d
 	# Arret d'urgence pendant une manoeuvre (obstacle imprevu tout pres) : on attend, sans faire courir le timeout
 	if _en_manoeuvre() and cible > 0.0 and d_mm >= 0.0 and d_mm < contournement.distance_securite_mm:
 		cible = 0.0
+		_t_urgence += dt                  # compte la duree de l'arret ; _verifier_duree_manoeuvre() y met fin au tour suivant
 	else:
 		_t_etat += dt
+		_t_urgence = 0.0
 	angle = clampf(angle, ReglagesRobot.ANGLE_MIN, ReglagesRobot.ANGLE_MAX)
 	if reprise.en_cours(_etat == Etat.SUIVI, dt):
 		cible = reprise.limiter_vitesse(cible)
@@ -449,6 +463,7 @@ func _changer_etat(e: Etat) -> void:
 		reprise.demarrer()
 	_etat = e
 	_t_etat = 0.0
+	_t_urgence = 0.0
 	if e == Etat.SUIVI:
 		memoire.nouveau_passage()
 		rattrapage.nouveau_suivi()

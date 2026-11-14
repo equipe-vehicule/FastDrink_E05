@@ -74,6 +74,7 @@ Hors `reglages_robot.json`, dans **`reglages_algorithmes.json`** : valeurs chois
 | --- | --- | --- | --- | --- |
 | Accélération non modélisée du Kalman (σ_a) | 1000 mm/s² (`config.py` : 400 ; 40 pistes : erreur d'arrêt max 11,7 → 9,3 mm). À reporter dans `config.py` (étape 11) | `reglages_algorithmes.json` `ultrason:sigma_a_mm_s2` | #65 | Hypothèse, à vérifier |
 | Tentatives de rattrapage et côté gardé | `tentatives_max` 4 (plus petite valeur qui passe, graine 47515) ; `garder_cote` vrai. Épingles de rayon ≈ 125 à 140 mm, sous le rayon minimal de la voiture (138 mm) | `reglages_algorithmes.json` `rattrapage:tentatives_max`, `rattrapage:garder_cote` | #75 | Hypothèse |
+| Durée maximale de l'arrêt d'urgence en manœuvre (écho filtré sous `distance_securite_mm` = 40 mm) | 3,0 s (**HYPOTHESE**, 14 nov., Mehdi) : doit dépasser `absence_proche_s` (1,0 s), plus 2 s pour un obstacle passager (main), sans mesure ; au-delà, la manœuvre se termine comme au timeout de 10 s (RETROUVER ou BLOQUE) | `reglages_algorithmes.json` `controleur:arret_urgence_max_s` | #64 | À vérifier sur le robot |
 | Marge de la vérification du contournement fluide | 20 mm, inchangée ; son ancienne justification (retard de suivi de 12 mm) ne tient plus depuis que la vérification rejoue la poursuite (marge prévue ≈ réelle à 3 à 6 mm près) | `reglages_algorithmes.json` `fluide:marge_obstacle_mm` | #76 | Hypothèse, à revoir avec les essais sur le robot |
 
 ## Épreuve (à demander au professeur)

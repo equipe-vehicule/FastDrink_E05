@@ -708,3 +708,11 @@ Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_rec
 
 **Usage :** 6 traces de référence dans `code_picar/tests/traces/` (430 Ko compressées), rejouées par `code_picar/tests/test_rejeu.py` ; plan, pièges du portage (Vector2 en float32, arrondis, bibliothèque mathématique) et lots : `code_picar/PORTAGE.md`.
 
+
+## Durée maximale de l'arrêt d'urgence en manœuvre (14 novembre)
+
+**Ce qui change :** pendant une manœuvre (`_en_manoeuvre()`), un écho filtré sous `contournement.distance_securite_mm` (40 mm) met la consigne à 0 et arrête le compteur du timeout (`_t_etat`) : avant ce changement, un écho persistant gelait la manœuvre indéfiniment (relevé à la relecture du portage). `controleur.gd` compte maintenant la durée continue de cet arrêt (`_t_urgence`, remise à zéro dès qu'il cesse et à chaque changement d'état) ; quand elle dépasse le nouveau réglage `arret_urgence_max_s` (module `controleur` de `reglages_algorithmes.json`, 3,0 s), la manœuvre se termine exactement comme au dépassement de `TIMEOUT_ETAT_S` (fonction commune `_terminer_manoeuvre_trop_longue()` : CONTOURNEMENT avec ligne en mémoire → RETROUVER, sinon BLOQUE). Le contrôle est fait au début du tour suivant (`_verifier_duree_manoeuvre()`).
+
+**Valeur : hypothèse (14 nov., Mehdi), sans mesure.** Elle doit dépasser `absence_proche_s` (1,0 s : le filtre garde un obstacle à moins de 60 mm jusqu'à 1 s sans écho ; un délai plus court couperait une manœuvre normale sur un écho perdu) ; 2 s de plus pour un obstacle passager (une main). À vérifier sur le robot (`MESURES_ROBOT.md`, #64).
+
+**Vérification :** les 8 bancs redonnent les CSV de `essais/` (aucun n'atteint ce cas) ; `code_picar/tests/test_arret_urgence.py` rejoue des entrées enregistrées par Godot (`tests/outils/sonde_arret_urgence.gd`) : états et sorties identiques ; la manœuvre se termine entre 3,0 s et 3,0 s + un tour après le début de l'arrêt continu (BLOQUE en contournement fluide, RETROUVER en contournement par phases) ; un arrêt de 2,9 s suivi d'un écho lointain ne la termine pas. Le même changement est dans `code_picar/fastdrink/conduite/controleur.py`.

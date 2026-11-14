@@ -118,12 +118,21 @@ func _reinitialiser() -> void:
 	_fins_sans_ligne = 0
 	_stabilite.reinitialiser()
 
-## Arret (entree en DECISION) : distance reelle avant de la voiture -> obstacle, lue par l'ultrason simule (exact,
-## sans bruit), comparee a la distance voulue. Recul (etat RECUL_OBSTACLE) : distance parcourue dans le monde.
+## Arret (entree en DECISION) : distance REELLE (verite terrain, vue de dessus) entre la boite d'encombrement de la
+## voiture, dont l'avant est a avant_voiture_mm de l'essieu, et l'obstacle le plus proche, comparee a la distance voulue.
+## Etape 10 (14 nov.) : avant, la mesure etait la derniere lecture de l'ultrason simule ; exacte en modele ideal (a la
+## geometrie du cone pres), elle portait en modele realiste le bruit, l'aberrante eventuelle et la cadence du capteur.
+## Piste sans obstacles connus (Blender) : ancienne mesure par l'ultrason (corrigee de l'etalonnage).
+## Recul (etat RECUL_OBSTACLE) : distance parcourue dans le monde.
 func _mesurer_sequence(etat: String, v: Vehicule, c: Controleur) -> void:
-	if etat == "DECISION" and v.distance_cm >= 0.0:
-		var avant_obstacle := v.distance_cm * 10.0 - c.robot.ultrason_avant_mm
-		_erreur_arret_max = maxf(_erreur_arret_max, absf(avant_obstacle - c.epreuve.distance_arret_mm))
+	if etat == "DECISION":
+		var avant_obstacle := NAN
+		if not obstacles.is_empty():
+			avant_obstacle = _distance_obstacle_proche(v) * 1000.0
+		elif v.distance_cm >= 0.0:
+			avant_obstacle = c.robot.corriger_ultrason_cm(v.distance_cm) * 10.0 - c.robot.ultrason_avant_mm
+		if not is_nan(avant_obstacle):
+			_erreur_arret_max = maxf(_erreur_arret_max, absf(avant_obstacle - c.epreuve.distance_arret_mm))
 	if etat == "RECUL_OBSTACLE":
 		_debut_recul = v.global_position
 	elif _etat_prec == "RECUL_OBSTACLE":
@@ -248,13 +257,19 @@ static func _en_droite(v: Vehicule, c: Controleur, g: GenerateurPiste) -> bool:
 func _mesurer_marge_obstacle(v: Vehicule) -> void:
 	if obstacles.is_empty():
 		return
+	_marge_obstacle = minf(_marge_obstacle, _distance_obstacle_proche(v))
+
+## Plus petite distance (m), vue de dessus, entre la boite d'encombrement de la voiture et les obstacles de la piste.
+func _distance_obstacle_proche(v: Vehicule) -> float:
 	var t := v.global_transform * Transform3D(Basis(), v.centre_encombrement)
 	var voiture := _rectangle(Vector2(t.origin.x, t.origin.z), Vector2(t.basis.x.x, t.basis.x.z),
 			Vector2(t.basis.z.x, t.basis.z.z), v.encombrement.x / 2.0, v.encombrement.z / 2.0)
+	var d := INF
 	for o in obstacles:
 		var b := Basis(Vector3.UP, o[4])
 		var r := _rectangle(Vector2(o[0], o[1]), Vector2(b.x.x, b.x.z), Vector2(b.z.x, b.z.z), o[2] / 2.0, o[3] / 2.0)
-		_marge_obstacle = minf(_marge_obstacle, distance_rectangles(voiture, r))
+		d = minf(d, distance_rectangles(voiture, r))
+	return d
 
 ## Coins d'un rectangle (plan x, z) : centre, axes unitaires et demi-cotes le long de ces axes.
 static func _rectangle(centre: Vector2, axe_u: Vector2, axe_v: Vector2, demi_u: float, demi_v: float) -> PackedVector2Array:

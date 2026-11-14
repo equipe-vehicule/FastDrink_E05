@@ -9,8 +9,12 @@
 ## Ecarts restants avec le Python (mediane_kalman.py) : portee_max_mm = 1500 (Python : D_MAX 2000) ; remise a zero
 ## apres absence_s (0,15 s ; 1 s si l'obstacle etait proche), qui n'existe pas en Python ; horodatage au tour du
 ## controleur (<= 20 ms) au lieu de l'instant de lecture.
+## Etape 10 (14 nov.) : trois ecarts VOULUS avec le Python, retenus par l'equipe, a reporter dans mediane_kalman.py et
+## config.py (etape 11) : prediction_sur_echo_manque et redemarrer_si_vitesse_impossible (graine 300923 des pistes
+## libres, bille tombee), sigma_a_mm_s2 = 1000 (erreur d'arret).
 ## Les constantes viennent de config.py de 09_Code-PiCar (dependance simulation <-> Pi a garder synchronisee) ;
-## SIGMA_A_MM_S2 = 400 est la valeur MEDIANE_KALMAN_SIGMA_A_MM_S2 (et non KALMAN_SIGMA_A_MM_S2 = 200, Kalman seul).
+## SIGMA_A_CONFIG_PY = 400 est la valeur MEDIANE_KALMAN_SIGMA_A_MM_S2 (et non KALMAN_SIGMA_A_MM_S2 = 200, Kalman seul) ;
+## elle n'est plus utilisee (sigma_a_mm_s2 = 1000 ci-dessous) et reste pour memoire.
 ## Aucune dependance a Godot (RefCounted) : se porte tel quel en Python.
 class_name FiltreUltrason
 extends RefCounted
@@ -19,7 +23,7 @@ const TAILLE_FILTRE := 3          # mediane sur les 3 dernieres mesures
 
 # ----- Parametres de "mediane_kalman" (config.py de 09_Code-PiCar/fastdrink ; regles hors ligne le 9 nov.)
 const SIGMA_Z_MM := 2.4           # bruit de mesure (mm) : config.py KALMAN_SIGMA_Z_MM (ecart type, robot immobile, 9 nov.)
-const SIGMA_A_MM_S2 := 400.0      # acceleration non modelisee (mm/s2) : config.py MEDIANE_KALMAN_SIGMA_A_MM_S2
+const SIGMA_A_CONFIG_PY := 400.0  # pour memoire (non utilisee) : config.py MEDIANE_KALMAN_SIGMA_A_MM_S2
 const SEUIL_REJET := 9.0          # rejet si nu^2 / S > 9 (3 ecarts types) : config.py KALMAN_SEUIL_REJET
 const REJETS_AVANT_RESET := 5     # rejets consecutifs avant de repartir de la mesure : config.py KALMAN_REJETS_AVANT_RESET
 const D_MIN_MM := 20.0            # plage acceptee par le Kalman : config.py DISTANCE_MIN_MM
@@ -30,6 +34,28 @@ var portee_max_mm := 1500.0       # au-dela, la mesure est ignoree
 var absence_s := 0.15             # duree sans echo avant de considerer qu'il n'y a plus d'obstacle
 var zone_proche_mm := 60.0        # sous cette distance, le capteur peut "perdre" un obstacle bien present
 var absence_proche_s := 1.0       # duree sans echo exigee quand l'obstacle etait tres proche
+## Etape 10 : faux (defaut, ecart voulu avec le Python) : un echo manque ne touche pas l'etat du Kalman ; vrai :
+## prediction seule, comme mediane_kalman.py ; la sortie est deja projetee a l'instant present (_kd + _kv x (t - _kt)). Pourquoi : la prediction
+## avance _kt a l'instant du manque ; la mediane suivante, datee au milieu de sa fenetre (~62 ms plus tot), echoue alors
+## au test t_milieu > _kt et n'est jamais prise. Echos alternes avec des manques (virage) : plus aucune mise a jour, la
+## sortie derive (graine 300923 : 559 -> 0 mm en 0,35 s alors que le capteur lisait 547 a 559 mm).
+var prediction_sur_echo_manque := false
+## Etape 10 : redemarrer le Kalman sur la mesure si sa vitesse estimee depasse la vitesse maximale du robot
+## (ReglagesRobot.vitesse_max_mm_s(), 614 mm/s : hypothese, #18). Les obstacles sont fixes
+## (precision du professeur) : la distance ne peut pas varier plus vite que la voiture. Graine 300923 : premiere mise a
+## jour sur un bord d'obstacle balaye par le cone en virage (660 -> 572 mm en 62 ms) : vitesse estimee -1400 mm/s.
+var redemarrer_si_vitesse_impossible := true
+## Etape 10 (14 nov., retenu par l'equipe) : acceleration non modelisee du Kalman (mm/s^2), 1000 au lieu de
+## SIGMA_A_CONFIG_PY (400, config.py) : a 400, le filtre garde la vitesse d'approche pendant le freinage et l'arret part trop
+## tot (erreur max 40 pistes 11,7 -> 9,3 mm). HYPOTHESE reglee en simulation ; a reporter dans config.py et verifier.
+var sigma_a_mm_s2 := 1000.0
+## Option d'essai (etape 10, erreur d'arret ; non retenue par l'equipe, defaut faux) : prediction du Kalman et projection
+## de la sortie avec l'avance mesuree par l'odometrie (obstacle fixe, droit devant) au lieu de la vitesse estimee.
+## Cause visee (graine 308842, journal) : au freinage, le modele a vitesse constante garde ~-200 mm/s alors que la voiture
+## ralentit ; la distance filtree passe 30 mm sous la vraie et la voiture s'arrete 12 mm trop loin.
+var projection_odometrie := false
+## Avance cumulee de la voiture selon l'odometrie (mm, > 0 en marche avant), donnee par le Controleur a chaque tour.
+var avance_mm := 0.0
 
 var _robot: ReglagesRobot
 var _mesures: Array[float] = []
@@ -46,6 +72,8 @@ var _p11 := 0.0
 var _p12 := 0.0
 var _p22 := 0.0
 var _rejets := 0
+var _k_avance := 0.0              # avance_mm a l'instant _kt
+var _avance_maj := 0.0            # avance_mm a l'instant de la mesure donnee a _k_mettre_a_jour
 
 func _init(robot: ReglagesRobot = null) -> void:
 	_robot = robot
@@ -94,21 +122,24 @@ func _filtrer_kalman(distance_cm: float, dt: float, nouvelle: bool) -> float:
 	if distance_cm >= 0.0 and mm <= portee_max_mm and mm >= D_MIN_MM and mm <= D_MAX_MM:
 		_t_absence = 0.0
 		if nouvelle:
-			_fenetre.push_back([_t, mm])
+			_fenetre.push_back([_t, mm, avance_mm])
 			if _fenetre.size() > TAILLE_FILTRE:
 				_fenetre.pop_front()
 			if not _k_demarre:
+				_avance_maj = avance_mm
 				_k_mettre_a_jour(mm, _t)   # demarrage sur la premiere mesure valide
 			elif _fenetre.size() == TAILLE_FILTRE:
 				var tri := [_fenetre[0][1], _fenetre[1][1], _fenetre[2][1]]
 				tri.sort()
 				var t_milieu: float = _fenetre[1][0]
 				if t_milieu > _kt:
+					_avance_maj = _fenetre[1][2]
 					_k_mettre_a_jour(tri[1], t_milieu)
 	else:
 		_t_absence += dt
-		if nouvelle and _k_demarre:
-			_k_mettre_a_jour(-1.0, _t)     # echo manque : prediction seule
+		if nouvelle and _k_demarre and prediction_sur_echo_manque:
+			_avance_maj = avance_mm
+			_k_mettre_a_jour(-1.0, _t)     # echo manque : prediction seule (comme le Python)
 		var delai := absence_proche_s if _d_filtre >= 0.0 and _d_filtre < zone_proche_mm else absence_s
 		if _t_absence >= delai:
 			_fenetre.clear()
@@ -119,7 +150,10 @@ func _filtrer_kalman(distance_cm: float, dt: float, nouvelle: bool) -> float:
 			return _d_filtre
 	if not _k_demarre:
 		return -1.0
-	_d_filtre = maxf(_kd + _kv * (_t - _kt), 0.0)
+	if projection_odometrie:
+		_d_filtre = maxf(_kd - (avance_mm - _k_avance), 0.0)
+	else:
+		_d_filtre = maxf(_kd + _kv * (_t - _kt), 0.0)
 	return _d_filtre
 
 ## kalman.py KalmanDistance.mettre_a_jour : mesure z (mm, ou -1) prise a l'instant t.
@@ -132,6 +166,7 @@ func _k_mettre_a_jour(z: float, t: float) -> void:
 		return
 	_k_predire(maxf(t - _kt, 0.0))
 	_kt = t
+	_k_avance = _avance_maj
 	if not valide:
 		return
 	var y := z - _kd
@@ -146,6 +181,9 @@ func _k_mettre_a_jour(z: float, t: float) -> void:
 	var k2 := _p12 / s
 	_kd += k1 * y
 	_kv += k2 * y
+	if redemarrer_si_vitesse_impossible and _robot != null and absf(_kv) > _robot.vitesse_max_mm_s():
+		_k_demarrer(z, t)                 # vitesse physiquement impossible : on repart de la mesure (v = 0)
+		return
 	var p11 := (1.0 - k1) * _p11
 	var p12 := (1.0 - k1) * _p12
 	var p22 := _p22 - k2 * _p12
@@ -158,6 +196,7 @@ func _k_demarrer(z: float, t: float) -> void:
 	_kd = z
 	_kv = 0.0
 	_kt = t
+	_k_avance = _avance_maj
 	_p11 = SIGMA_Z_MM * SIGMA_Z_MM
 	_p12 = 0.0
 	_p22 = V0_ECART_TYPE_MM_S * V0_ECART_TYPE_MM_S
@@ -165,8 +204,11 @@ func _k_demarrer(z: float, t: float) -> void:
 
 ## Prediction sur T secondes : P = F P F^T + Q, F = [[1, T], [0, 1]], Q = sigma_a^2 [[T^4/4, T^3/2], [T^3/2, T^2]].
 func _k_predire(tt: float) -> void:
-	_kd += _kv * tt
-	var q := SIGMA_A_MM_S2 * SIGMA_A_MM_S2
+	if projection_odometrie:
+		_kd -= _avance_maj - _k_avance   # avance de la voiture entre _kt et l'instant de la mesure (obstacle fixe)
+	else:
+		_kd += _kv * tt
+	var q := sigma_a_mm_s2 * sigma_a_mm_s2
 	var n11 := _p11 + tt * (_p12 + _p12) + tt * tt * _p22 + q * pow(tt, 4.0) / 4.0
 	var n12 := _p12 + tt * _p22 + q * pow(tt, 3.0) / 2.0
 	var n22 := _p22 + q * tt * tt

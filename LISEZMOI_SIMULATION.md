@@ -607,6 +607,83 @@ Avant le passage en unités physiques, les scénarios réalistes donnaient 7/25 
 **Défauts trouvés (non corrigés) :**
 - Graine 300923 (pistes libres, réaliste seulement) : bille tombée à 6,2 s, avant tout obstacle, sans rattrapage. Cause à chercher (#67).
 - Graine 47515 : toujours en échec (#75).
-- L'erreur d'arrêt passe de 4 à 15 mm (biais du capteur non compensé : la loi 0,971 d + 8,3 n'est pas inversée dans le contrôleur ; le rapport la prévoit). Dans la tolérance, à corriger avec les mesures.
+- L'erreur d'arrêt passe de 4 à 15 mm (biais du capteur non compensé : la loi 0,971 d + 8,3 n'était pas inversée dans le contrôleur ; elle l'est depuis l'étape 10, voir la section suivante). Dans la tolérance.
 - Recul : 156 mm au premier essai, 150,0 mm après correction (l'odométrie utilisait la commande non arrondie alors que le moteur reçoit la commande entière).
 
+## Défauts du modèle réaliste (14 nov., étape 10)
+
+Suite de l'étape 9 : les défauts trouvés avec le modèle réaliste (liste « Défauts trouvés » plus haut) sont analysés un par un, cause puis correction puis chiffres. Les valeurs réglées en simulation sont des **HYPOTHÈSES** (listées dans `MESURES_ROBOT.md`).
+
+### Compensation du biais (14 nov., étape 10)
+
+L'algorithme inverse l'étalonnage de l'ultrason, d = (z − biais) / gain (`ReglagesRobot.corriger_ultrason_cm`, appelée au début de `Controleur.calculer`, avant le filtre ; −1 non transformé, résultat borné à 0 ; gain 1 et biais 0 : valeur rendue telle quelle). Étalonnage supposé connu (valeurs provisoires 0,971 et 8,3 mm de `reglages_robot.json`) ; le robot réel utilisera la droite du 19 nov. `banc_essai.gd` applique la même correction à la lecture brute pour mesurer l'erreur d'arrêt (sinon la mesure portait le biais).
+
+Contrôle : 25 scénarios `--modele=ideal` identiques à `essais/scenarios_reference.csv` (0 ligne différente) ; 25 scénarios réalistes : 25/25, bille max 0,88 (0,85 avant), erreur d'arrêt max 14,0 mm (15,1 mm avant), le reste de l'erreur venant du retard, du bruit et du filtre, pas du biais.
+
+### Mesure de l'erreur d'arrêt (`banc_essai.gd`)
+
+L'erreur d'arrêt n'est plus la dernière lecture de l'ultrason (qui portait le bruit, les valeurs aberrantes et la cadence du capteur) : c'est l'**écart réel le plus court**, vu de dessus, entre la boîte d'encombrement de la voiture et l'obstacle (`_distance_obstacle_proche`, déjà utilisée pour la marge). Choix de l'équipe : l'écart le plus court (le coin), donc conservateur. Le lacet de la voiture à l'arrêt (jusqu'à 6°) l'augmente : en idéal, le max passe de 4 à 12,2 mm (40 pistes). **Les erreurs d'arrêt d'avant l'étape 10 sont mesurées autrement : ne pas les comparer.** Piste sans obstacles connus (Blender) : ancienne mesure par l'ultrason, corrigée de l'étalonnage.
+
+### Filtre : échos manqués et vitesse impossible (graine libre 300923)
+
+**Cause** (bille tombée sur la graine 300923 des pistes libres) : un obstacle vu par le cône en virage donne des échos alternés avec des manques. Une première mise à jour sur un bord d'obstacle balayé par le cône (660 → 572 mm en 62 ms) donne une vitesse estimée de −1400 mm/s. De plus, la prédiction sur écho manqué avançait l'instant du Kalman (`_kt`) ; la médiane suivante, datée au milieu de sa fenêtre (~62 ms plus tôt), échouait au test de date et n'était jamais prise : plus aucune mise à jour. Distance filtrée : 559 → 0 mm en 0,35 s alors que le capteur lisait 547 à 559 mm ; recul brusque, bille tombée.
+
+**Corrections** (`filtre_ultrason.gd`) :
+- `redemarrer_si_vitesse_impossible` (vrai) : le Kalman redémarre sur la mesure si |v| > `ReglagesRobot.vitesse_max_mm_s()` (614 mm/s, **HYPOTHÈSE**, #18) ; les obstacles sont fixes (précision du professeur), la distance ne peut pas varier plus vite que la voiture.
+- `prediction_sur_echo_manque` (faux) : un écho manqué ne touche plus l'état du Kalman (le Python fait une prédiction seule).
+
+Ces deux écarts avec `09_Code-PiCar/fastdrink/filtres/mediane_kalman.py` sont **voulus** ; le Python a le même défaut et n'est **pas corrigé** (à faire à l'étape 11).
+
+### Erreur d'arrêt : σ_a du Kalman (graine 308842)
+
+**Cause** : le Kalman à vitesse constante garde la vitesse d'approche pendant le freinage et déclenche l'arrêt trop tôt (graine 308842 : 82 mm filtrés pour 113 réels).
+
+**Retenu** : `sigma_a_mm_s2` = 1000 au lieu de 400 (`config.py`, `MEDIANE_KALMAN_SIGMA_A_MM_S2`). 40 pistes : erreur d'arrêt max 11,7 → 9,3 mm. **HYPOTHÈSE** réglée en simulation, à reporter dans `config.py` et à vérifier sur le robot. `SIGMA_A_CONFIG_PY` (400) reste dans le fichier pour mémoire.
+
+**Non retenu** : option `projection_odometrie` (prédiction et sortie du filtre avec l'avance mesurée par l'odométrie, obstacle fixe) : 5 mm d'erreur à l'arrêt mais marge des pistes libres 6,9 mm. Pour l'essayer : `--reglage=ultrason:projection_odometrie=true` (le filtre est le nœud `ultrason` du contrôleur ; sigma_a seul : `--reglage=ultrason:sigma_a_mm_s2=400`).
+
+### #75 : épingles plus serrées que la voiture (graine libre 47515)
+
+**Cause** : trois épingles de rayon ≈ 125 à 140 mm, sous le rayon minimal de la voiture (138 mm). Même sans obstacle, la voiture y perd la ligne. Le 2e rattrapage finissait la barre presque parallèle à la ligne et la 3e tentative reculait du mauvais côté.
+
+**Retenu** (`rattrapage.gd`) : `garder_cote` = vrai (les tentatives gardent le côté du premier rattrapage) et `tentatives_max` = 4 (**HYPOTHÈSE** : plus petite valeur qui passe ; `garder_cote` seul ou 5 tentatives seules : BLOQUE). Passe en réaliste ; **en idéal, la graine 47515 reste BLOQUE** (banc libre idéal 39/40, comme avant). Ces réglages changent aussi le modèle idéal. Essai de l'ancien comportement : `--reglage=rattrapage:garder_cote=false --reglage=rattrapage:tentatives_max=3`.
+
+### #76 : marge latérale du contournement fluide
+
+**Cause** : la marge prévue (≈ 43 mm) était bien plus grande que la marge réelle (≈ 9 à 11 mm), à cause du retard de la poursuite dans la sortie (~31 mm ; cap réel 27,5° pour 34,8° prévus ; graine 110867, D_recul 50 : 42,9 mm prévus, 10,6 mm réels).
+
+**Correction** (`contournement_fluide.gd`) : le choix du rayon rejoue maintenant la poursuite (`_poursuite_libre` : modèle bicyclette, même loi que `calculer()`, pas de contrôle, servo à sa vitesse) au lieu de vérifier la courbe idéale. Marge prévue ≈ réelle à 3 à 6 mm près. `marge_obstacle_mm` reste à 20 mm, mais son ancienne justification (retard de suivi de 12 mm) ne tient plus : **HYPOTHÈSE**, à revoir avec les essais sur le robot.
+
+**Conséquence** : avec D_arret + D_recul = 150 mm, aucun rayon fluide ne passe et tout se fait par phases.
+
+**Non retenu** : `anticipation_mm` 150 → 100 (marges min 20,3 mm en D_recul 50 et 28,1 mm sur 40 pistes), mais en idéal bille 0,64 → 0,86 (`pire_cas_avant_virage`) et oscillation en droite 3,6 → 8,6°.
+
+### Contournement par phases : côté de la reprise (suite de #72)
+
+**Cause** (graines 79191 et 63353, D_recul 50, obstacle juste avant un virage) : l'ALIGNEMENT finit dans le virage ; l'estimation odométrique, qui suppose une droite, donnait le mauvais côté. Résultat : 9 s sans ligne, RETROUVER, DEMI_TOUR, inversion de marche à la fin du demi-tour, bille tombée.
+
+**Correction** (`contournement.gd`, `_ecart_fin_alignement_sans_ligne`) : reprise du côté où la ligne a été vue en alignement ; sinon odométrie si l'écart est ≥ 38 mm (`ERREUR_MAX_MM`) ; sinon côté du contournement. D_recul 50 : 14/15 → 15/15.
+
+### Bancs finaux (références de `essais/` remplacées)
+
+| Banc | Verdicts | Coll. | Bille max | Err. arrêt max (mm) | Marge min (mm) | Temps (s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Idéal, 40 pistes | 40/40 | 0 | 0,80 | 12,2 | 26,4 | 2645 |
+| Idéal, D_recul 50 | 15/15 | 0 | 0,65 | 15,2 | 27,5 | 948 |
+| Idéal, pistes libres | 39/40 (47515 BLOQUE) | 0 | 0,94 | 11,0 | 21,6 | 3177 |
+| Idéal, 25 scénarios | 25/25 | 0 | 0,81 | 8,4 | 33,9 | 491 |
+| Réaliste, 40 pistes | 40/40 | 0 | 0,81 | 8,8 | 28,2 | 2648 |
+| Réaliste, D_recul 50 | 15/15 | 0 | 0,72 | 11,7 | 33,0 | 945 |
+| Réaliste, pistes libres | 40/40 | 0 | 1,00 (graine 39596) | 24,7 | 23,3 | 3217 |
+| Réaliste, 25 scénarios | 25/25 | 0 | 0,86 | 4,4 | 32,3 | 490 |
+
+Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge min 4,6 mm ; pistes libres 38/40 (47515 et 300923), marge min 8,5 mm ; scénarios marge min 20,8 mm.
+
+### Restes ouverts
+
+- Fin de `DEMI_TOUR` en marche arrière : inversion immédiate possible, plus atteinte par aucun banc.
+- Pistes libres, réaliste, graine 39596 : bille 1,00 avec verdict OK (rattrapage puis réaccélération ; existait avant).
+- Graine 269247 : bille 0,97.
+- Pistes libres, réaliste, graine 205895 : erreur d'arrêt 24,7 mm, cause non analysée.
+- Graine 47515 en idéal : BLOQUE.
+- Étape 11 : reporter les trois écarts du filtre dans `mediane_kalman.py` et `config.py`.

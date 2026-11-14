@@ -89,6 +89,7 @@ var _n_echos_hors_ligne := 0
 var _contresens_mm := 0.0
 var _recul_fini := false             # RECUL_OBSTACLE : recul termine, pause avant le contournement
 var _t_pause := 0.0
+var _avance_mm := 0.0                # avance cumulee selon l'odometrie (mm), pour FiltreUltrason.projection_odometrie
 
 
 # =====================================================================================================================
@@ -98,9 +99,12 @@ var _t_pause := 0.0
 ## n'est mis a jour qu'a ce moment-la ; « mediane3 » l'ignore).
 func calculer(sondes: Array, distance_cm: float, dt: float, mesure_nouvelle := true) -> Dictionary:
 	dt = maxf(dt, 0.001)
+	# Etape 10 : on suppose l'etalonnage de l'ultrason connu ; le robot reel utilisera la droite du 19 nov.
+	distance_cm = robot.corriger_ultrason_cm(distance_cm)
 	var ligne := SuiviLigne.lire(sondes)
 	var somme := ligne.x
 	var n := int(ligne.y)
+	ultrason.avance_mm = _avance_mm
 	var d_mm := ultrason.filtrer(distance_cm, dt, mesure_nouvelle)
 	distance_filtree_mm = d_mm
 	_verifier_duree_manoeuvre()
@@ -181,6 +185,7 @@ func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, d
 	var angle_servo := int(round(angle))
 	odo.suivre_servo(float(angle_servo), dt)              # toujours : angle reel du servo connu au debut d'une manoeuvre
 	odo.integrer_global(robot.vitesse_odometrie_mm_s(cmd), dt)    # toujours : position globale (sens de marche)
+	_avance_mm += robot.vitesse_odometrie_mm_s(cmd) * dt
 	var a_contresens := _surveiller_sens(somme, n, dt)
 	if n > 0 and not a_contresens and (_etat == Etat.SUIVI or _ligne_de_sortie_visible()):
 		memoire.memoriser(somme / n)

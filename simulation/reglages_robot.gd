@@ -21,6 +21,8 @@ const CLES_JSON := {
 	"demi_angle_ultrason_deg": "demi_angle_ultrason_deg",
 	"frequence_controle_hz": "frequence_controle_hz",
 	"erreur_vitesse_odometrie": "erreur_vitesse_odometrie",
+	"gain_ultrason": "gain_ultrason",
+	"biais_ultrason_mm": "biais_ultrason_mm",
 }
 
 # ----- Robot (reglages_robot.json)
@@ -40,6 +42,10 @@ var table_vitesse_mm_s: Array = []
 var mm_s_par_cmd := 0.0           # modele lineaire seulement (table vide) : mm/s par unite de commande (cle vitesse_mm_s_par_cmd)
 ## Choix du filtre de l'ultrason : "mediane3" ou "mediane_kalman" (voir FiltreUltrason). Cle : filtre_ultrason.
 var filtre_ultrason := "mediane3"
+## Etalonnage de l'ultrason connu de l'algorithme : mesure z = gain x d + biais (d depuis la face du capteur).
+## Le robot reel utilisera la droite d'etalonnage du 19 nov. (valeurs provisoires du TEX section 6.5 d'ici la).
+var gain_ultrason := 1.0
+var biais_ultrason_mm := 0.0
 var frequence_controle_hz := 0.0  # frequence de la boucle du programme du robot (Hz ; 0 = a chaque pas physique)
 
 # ----- Algorithmes : vitesses et freinage (unites physiques ; la table convertit en commande a la sortie du controleur)
@@ -76,6 +82,13 @@ func appliquer(valeurs: Dictionary) -> void:
 		push_error("ReglagesRobot : ni table_vitesse_mm_s (2 points au moins) ni vitesse_mm_s_par_cmd dans reglages_robot.json.")
 	filtre_ultrason = str(valeurs.get("filtre_ultrason", "mediane3"))
 
+## Compensation de l'etalonnage de l'ultrason (etape 10) : d = (z - biais) / gain, en cm. -1 (pas d'echo) n'est pas
+## transforme. Sans etalonnage (gain 1, biais 0 : modele ideal), z est rendu tel quel : resultats identiques.
+func corriger_ultrason_cm(z_cm: float) -> float:
+	if z_cm < 0.0 or (gain_ultrason == 1.0 and biais_ultrason_mm == 0.0):
+		return z_cm
+	return maxf((z_cm * 10.0 - biais_ultrason_mm) / gain_ultrason, 0.0) / 10.0   # >= 0 : jamais confondu avec -1
+
 ## De l'essieu arriere a l'avant de la voiture (capteur + depassement du capteur).
 func avant_voiture_mm() -> float:
 	return longueur_avant_mm + ultrason_avant_mm
@@ -83,6 +96,11 @@ func avant_voiture_mm() -> float:
 ## Vrai si la vitesse est proportionnelle a la commande (table vide : modele ideal).
 func est_lineaire() -> bool:
 	return table_vitesse_mm_s.size() < 2
+
+## Vitesse maximale (mm/s) : vitesse a la commande maximale (100, plage -100 a 100). Avec la table actuelle, 614 mm/s =
+## point haut de la table (HYPOTHESE, #18).
+func vitesse_max_mm_s() -> float:
+	return vitesse_mm_s(100.0)
 
 ## Vitesse reelle (mm/s, signee) pour une commande de -100 a 100 : table_vitesse_mm_s (interpolation lineaire,
 ## symetrique en marche arriere), ou commande x mm_s_par_cmd si la table est vide (calcul ideal, inchange).

@@ -1,8 +1,8 @@
 # Suivi de la simulation – FastDrink E05
 
-Mis à jour le 13 novembre 2026 (contournement par phases vérifié, #72 ; générateur de pistes libre et virages de tout angle, #73 ; stabilité du suivi, rampe d'accélération pour la bille, banc aux cas indépendants ; obstacles posés sur différentes faces ; essais rejouables, boucle à 50 Hz, mesures de stabilité ; fichier unique des valeurs du robot ; avant : séquence arrêt → recul → contournement, 12 nov.). Ce fichier garde l'état de la simulation, ses limites, les directives pour le portage sur le robot et les tâches restantes. Le détail des modifications est dans `LISEZMOI_SIMULATION.md`.
+Mis à jour le 14 novembre 2026 (étape 10 : défauts du modèle réaliste, compensation du biais, filtre, #75, #76 ; 13 nov. : contournement par phases vérifié, #72 ; générateur de pistes libre et virages de tout angle, #73 ; stabilité du suivi, rampe d'accélération pour la bille, banc aux cas indépendants ; obstacles posés sur différentes faces ; essais rejouables, boucle à 50 Hz, mesures de stabilité ; fichier unique des valeurs du robot ; avant : séquence arrêt → recul → contournement, 12 nov.). Ce fichier garde l'état de la simulation, ses limites, les directives pour le portage sur le robot et les tâches restantes. Le détail des modifications est dans `LISEZMOI_SIMULATION.md`.
 
-## 0. Où en est le projet et ce qu'il reste à faire (13 novembre)
+## 0. Où en est le projet et ce qu'il reste à faire (14 novembre)
 
 ### Ce qui est fait (simulation Godot)
 
@@ -20,6 +20,12 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 
 **Depuis l'étape 9 (13 nov.), modèle réaliste par défaut** (bruit, biais, aberrantes, cadence de 16 Hz de l'ultrason, filtre médiane 3 + Kalman, table de vitesse des moteurs ; algorithmes en mm/s et mm/s²) : 40/40, 25/25, 15/15 (D_recul 50), 38/40 (pistes libres) ; sensibles au retard de l'ultrason et à l'étalonnage de la vitesse (détail : `LISEZMOI_SIMULATION.md`, étape 9). Références idéales : `--modele=ideal`.
 
+**Étape 10 (14 nov.) faite : défauts du modèle réaliste.** Compensation du biais de l'ultrason dans le contrôleur ; erreur d'arrêt mesurée comme l'écart réel le plus court entre la voiture et l'obstacle (les valeurs d'avant ne se comparent pas) ; filtre corrigé (redémarrage du Kalman si |v| > 614 mm/s, écho manqué sans prédiction, `sigma_a_mm_s2` 1000) ; #75 (`rattrapage.garder_cote`, `tentatives_max` 4) ; #76 (le choix du rayon fluide rejoue la poursuite) ; côté de la reprise du contournement par phases (#72, suite). Réaliste : 40/40, 15/15 (D_recul 50), 40/40 (pistes libres), 25/25, 0 collision ; idéal : 40/40, 15/15, 39/40 (47515 BLOQUE), 25/25. Tableau : section 9 ; détail : `LISEZMOI_SIMULATION.md`. Valeurs réglées en simulation = hypothèses (`MESURES_ROBOT.md`).
+
+**Prochaine étape (11) : portage Python.** Reporter dans `09_Code-PiCar/fastdrink/filtres/mediane_kalman.py` et `config.py` les trois écarts du filtre (redémarrage si vitesse impossible, écho manqué sans prédiction, σ_a = 1000 ; non faits) et les vérifier.
+
+**Restes ouverts (étape 10) :** fin de `DEMI_TOUR` en marche arrière (inversion immédiate possible, plus atteinte par aucun banc) ; graine libre réaliste 39596 : bille 1,00 avec verdict OK (rattrapage puis réaccélération, existait avant) ; graine 269247 : bille 0,97 ; graine libre réaliste 205895 : erreur d'arrêt 24,7 mm (cause non analysée) ; graine 47515 en idéal : BLOQUE.
+
 **Ce que la simulation ne garantit pas encore :** les valeurs du modèle réaliste viennent du rapport des filtres (3 vitesses moyennes, ultrason à l'arrêt) ; zone morte, temps de réponse, servo et dimensions ne sont pas mesurés. Avant l'étape 9, elle était idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
 
 ### Ce qu'il reste à faire pour une simulation fidèle (par priorité)
@@ -35,7 +41,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 **2. Mettre ces mesures dans le modèle (`vehicule.gd`, `odometrie.gd`, `filtre_ultrason.gd`)**
 - [x] Table de vitesse (3 points mesurés, zone morte 13 et point à 100 = hypothèses) dans le modèle et l'odométrie (étape 9).
 - [x] Bruit, biais, aberrantes et cadence de l'ultrason ; filtre médiane 3 + Kalman (`config.py`) (étape 9). Retard : 0 par défaut (hypothèse), 0,3 s testé en sensibilité : erreur d'arrêt jusqu'à 35,7 mm.
-- [ ] Compenser le biais de l'ultrason dans le contrôleur (erreur d'arrêt 15 mm au lieu de 4).
+- [x] Compenser le biais de l'ultrason dans le contrôleur (étape 10 ; erreur d'arrêt max 8,8 mm en réaliste sur 40 pistes, mesurée comme l'écart réel le plus court).
 - [ ] Retard du moteur et du servo.
 - [ ] Vitesses minimales au-dessus de la zone morte : les algorithmes sont maintenant en mm/s (`vitesse_approche_min_mm_s` 32, `vitesse_recul_mm_s` 40) et la table convertit en commande ; reste à vérifier les valeurs sur le robot.
 - [x] Banc repassé avec le modèle réaliste (étape 9) : faiblesses = retard de l'ultrason et étalonnage de la vitesse (odométrie +10 % : 1 collision ; retard 0,3 s : erreur d'arrêt 30,2 mm) ; bille tombée sur la graine 300923 (pistes libres).
@@ -43,9 +49,9 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 **3. Algorithmes encore fragiles**
 - [x] Contournement par phases : trajectoire vérifiée avant de partir (cap de 40 à 90°), arrêt sûr en ARRET si rien ne passe (#72, étape 6). D_recul 50 : 15/15, 0 collision.
 - [ ] Contournement fluide : marges min 1,1 mm (D_recul 50, graine 95029) et 7,9 mm (pistes libres). Essai `marge_obstacle_mm` 40 : marges ≥ 25,7 mm mais le fluide n'est plus choisi, temps +13 à +29 % ; décision à prendre.
-- [ ] Obstacle juste avant un virage plus serré que la voiture (graine 47515, pistes libres : épingle de 165° de rayon 126 mm) : la voiture sort du contournement décalée, perd la ligne, BLOQUE après 3 rattrapages.
+- [x] Obstacle juste avant un virage plus serré que la voiture (#75, graine 47515) : `garder_cote` et 4 tentatives (hypothèse) ; passe en réaliste, reste BLOQUE en idéal.
 - [ ] Bille à 0,94 sur les pistes libres (0,80 sur la grille) : à analyser.
-- [ ] Marge latérale du contournement fluide : 14 mm au pire (bloc de 150 de large décalé de 10 mm) pour 40 mm prévus ; `marge_laterale_mm` à revoir après les mesures du robot.
+- [x] (#76, étape 10 : marge prévue ≈ réelle à 3 à 6 mm près ; `marge_obstacle_mm` 20 = hypothèse) Marge latérale du contournement fluide : 14 mm au pire (bloc de 150 de large décalé de 10 mm) pour 40 mm prévus ; `marge_laterale_mm` à revoir après les mesures du robot.
 - [ ] Ligne droite après l'obstacle (`droite_apres_min` = 0,60 m, hypothèse) : le retour du contournement du pire cas finit environ 0,68 m après l'arrière d'un bloc de 50 de profondeur (perte de ligne de 0,6 s dans `obstacle_avant_virage`) ; à confirmer avec le professeur (#56).
 - [ ] Écho du sol sur l'ultrason (cône vertical, capteur à 60 mm) : non simulé, à mesurer (#53).
 - [x] Pertes de ligne dans les virages de 120 mm (#74) : inévitables avec les sondes à 217 mm devant l'essieu (rayon minimal décrit par la barre : 257 mm), rattrapées en marche arrière. Nombre de rattrapages inchangé avec la rampe de 60 (2 dans `courbes_120`, 4 sur le parcours fourni).
@@ -237,3 +243,20 @@ Le plan de la section 8 est appliqué ; le détail des fichiers est dans `LISEZM
 - Virages du générateur : quarts de cercle (90°) seulement.
 - « Parcours fourni » (sans obstacle) : 4 pertes de ligne d'environ 0,6 s dans les virages serrés, rattrapées. Suivi de ligne, pas lié aux obstacles : à traiter à part.
 - Modèle idéal (pas de bruit sur l'ultrason ni l'odométrie) : à recalibrer sur le robot.
+
+### Derniers résultats : bancs de l'étape 10 (14 novembre)
+
+Références de `essais/` remplacées. Erreur d'arrêt = écart réel le plus court voiture-obstacle (autre mesure qu'avant : ne pas comparer aux tableaux ci-dessus).
+
+| Banc | Verdicts | Coll. | Bille max | Err. arrêt max (mm) | Marge min (mm) | Temps (s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Idéal, 40 pistes | 40/40 | 0 | 0,80 | 12,2 | 26,4 | 2645 |
+| Idéal, D_recul 50 | 15/15 | 0 | 0,65 | 15,2 | 27,5 | 948 |
+| Idéal, pistes libres | 39/40 (47515 BLOQUE) | 0 | 0,94 | 11,0 | 21,6 | 3177 |
+| Idéal, 25 scénarios | 25/25 | 0 | 0,81 | 8,4 | 33,9 | 491 |
+| Réaliste, 40 pistes | 40/40 | 0 | 0,81 | 8,8 | 28,2 | 2648 |
+| Réaliste, D_recul 50 | 15/15 | 0 | 0,72 | 11,7 | 33,0 | 945 |
+| Réaliste, pistes libres | 40/40 | 0 | 1,00 (graine 39596) | 24,7 | 23,3 | 3217 |
+| Réaliste, 25 scénarios | 25/25 | 0 | 0,86 | 4,4 | 32,3 | 490 |
+
+Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge min 4,6 mm ; pistes libres 38/40 (47515 et 300923), marge min 8,5 mm ; scénarios marge min 20,8 mm.

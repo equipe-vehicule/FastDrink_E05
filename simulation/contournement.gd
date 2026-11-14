@@ -139,6 +139,8 @@ var _n_orbite := 0                # 0 = premiere orbite, 1 = orbite elargie
 var _n_echos := 0                 # pas consecutifs avec un echo brut devant
 var _y_fin := 0.0                 # y de l'essieu a atteindre avant de revenir
 var _x_ligne := 0.0               # position x de la ligne, reperee quand les sondes la revoient
+var _vu_cote_alignement := false  # ALIGNEMENT : ligne deja vue du cote du contournement (c * e > 0)
+var _e_alignement := NAN          # ALIGNEMENT : dernier ecart lu par les sondes (mm), NAN = pas vue
 var _cap_debut_recherche := 0.0
 var _cote_travers := 1            # 1 = braquage a droite (phase TRAVERS)
 var _cap_travers := 0.0
@@ -327,7 +329,7 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 		Phase.CROISEMENT:
 			angle = _phase_croisement(c, somme, n, v_mm_s)
 		Phase.ALIGNEMENT:
-			angle = _phase_alignement(c, v_mm_s)
+			angle = _phase_alignement(c, somme, n, v_mm_s)
 	return Vector2(angle, vitesse_manoeuvre_mm_s)
 
 
@@ -456,14 +458,46 @@ func _phase_croisement(c: float, somme: float, n: int, v_mm_s: float) -> float:
 	var avance_braquage := _retard_mm(90.0 + c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
 	if c * (_odo.x - _x_ligne) <= _rayon_virage_mm() * (1.0 - cos(_odo.cap)) + avance_braquage:
 		phase = Phase.ALIGNEMENT
+		_vu_cote_alignement = false
+		_e_alignement = NAN
 	return 90.0
 
 
 ## Braquage constant : on finit dans l'axe, l'essieu arriere sur la ligne.
-func _phase_alignement(c: float, v_mm_s: float) -> float:
+## Ligne parallele : elle revient sous la barre du cote du contournement (c * e > 0) et s'arrete pres du centre.
+## Si elle traverse la barre jusqu'a l'autre cote, elle tourne a l'oppose du contournement : le PID reprend des
+## maintenant, la ligne sous les sondes. (Banc D_recul 50, graine 79191, 14 nov. : obstacle 0,65 m avant un virage a
+## gauche ; la ligne passait de 00001 a 10000 puis etait perdue, le suivi repartait a droite d'apres l'odometrie :
+## 9 s en cercle, RETROUVER, ligne a contresens, DEMI_TOUR, bille tombee.)
+func _phase_alignement(c: float, somme: float, n: int, v_mm_s: float) -> float:
+	if n > 0:
+		var e := somme / n
+		_e_alignement = e
+		if c * e > 0.0:
+			_vu_cote_alignement = true
+		elif c * e < 0.0 and _vu_cote_alignement:
+			_reprise_par_pid(e)
+			return 90.0 + c * braquage_manoeuvre
 	if c * _odo.cap + _inertie_cap(v_mm_s) >= -deg_to_rad(3.0):
 		termine = true
+		if n == 0:
+			_e_reprise = _ecart_fin_alignement_sans_ligne(c)
 	return 90.0 + c * braquage_manoeuvre
+
+
+## Fin d'ALIGNEMENT sans ligne sous les sondes : de quel cote la chercher (mm, > 0 = a droite).
+## L'estimation odometrique (_x_ligne - x) suppose une ligne droite ; si elle est plus petite que ERREUR_MAX_MM, la ligne
+## devrait etre sous les sondes : elle a tourne et le signe de l'estimation n'est que du bruit (graine 63353, D_recul 50 :
+## 2,4 mm d'ecart entre deux essais, l'un repartait du bon cote, l'autre non et la bille tombait). On prend alors le
+## dernier cote ou elle a ete vue : en ALIGNEMENT s'il y a lieu, sinon le cote du contournement, par ou elle a quitte
+## la barre en CROISEMENT.
+func _ecart_fin_alignement_sans_ligne(c: float) -> float:
+	if not is_nan(_e_alignement) and _e_alignement != 0.0:
+		return signf(_e_alignement) * SuiviLigne.ERREUR_MAX_MM
+	var estime := _x_ligne - _odo.x
+	if absf(estime) >= SuiviLigne.ERREUR_MAX_MM:
+		return clampf(estime, -SuiviLigne.ERREUR_MAX_MM, SuiviLigne.ERREUR_MAX_MM)
+	return c * SuiviLigne.ERREUR_MAX_MM
 
 
 # ----- Outils

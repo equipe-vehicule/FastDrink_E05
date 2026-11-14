@@ -71,6 +71,15 @@ var demi_tour := DemiTour.new()
 var reprise := RepriseDouce.new()
 var memoire := MemoireParcours.new(robot, odo)
 
+## Etape 5 (#67, 13 nov.) : rampe de la commande a l'acceleration seulement (cmd/s ; 0 = robot.rampe_cmd_par_s).
+## Le freinage garde robot.rampe_cmd_par_s (vitesse_freinage en depend : arret devant l'obstacle).
+## Cause visee : fin de la reprise douce apres un rattrapage, la commande passe de 25 a 45 en 0,16 s pendant que la
+## bille oscille encore (parcours fourni 0,96 ; demi_tour 0,99).
+## Avant le 13 nov. : 0 (125 cmd/s). Avec 60 : bille max 0,99 -> 0,82 (17 scenarios), 0,84 -> 0,80 (banc 40),
+## rattrapages 14 -> 10, temps +3 %. 40 et 25 essayes : voir LISEZMOI_SIMULATION.md (etape 5). Provisoire : depend de
+## la frequence propre de la bille (a mesurer sur le robot).
+var rampe_montee_cmd_par_s := 60.0
+
 # ----- Journal et diagnostic
 var distance_filtree_mm := -1.0      # derniere distance ultrason apres filtrage
 ## Banc d'essai : pourquoi le contournement fluide n'a pas ete utilise (nombre de fois par raison). N'influence pas
@@ -168,7 +177,11 @@ func _appliquer(angle: float, cible: float, somme: float, n: int, d_mm: float, d
 		cible = reprise.limiter_vitesse(cible)
 		angle = reprise.limiter_angle(angle, dt)
 	reprise.memoriser_angle(angle)
-	_cmd = move_toward(_cmd, cible, robot.rampe_cmd_par_s * dt)
+	var rampe := robot.rampe_cmd_par_s
+	# Changement de sens (cible * _cmd < 0) : rampe de freinage, choix volontaire
+	if rampe_montee_cmd_par_s > 0.0 and absf(cible) > absf(_cmd) and cible * _cmd >= 0.0:
+		rampe = rampe_montee_cmd_par_s   # acceleration (en avant ou en arriere)
+	_cmd = move_toward(_cmd, cible, rampe * dt)
 	var angle_servo := int(round(angle))
 	odo.suivre_servo(float(angle_servo), dt)              # toujours : angle reel du servo connu au debut d'une manoeuvre
 	odo.integrer_global(_cmd * robot.mm_s_par_cmd, dt)    # toujours : position globale (sens de marche)
@@ -279,7 +292,7 @@ func _etat_recul_obstacle(somme: float, n: int, d_mm: float, dt: float) -> Vecto
 	if absf(_cmd) < 0.5:
 		_t_pause += dt
 	if _t_pause >= epreuve.pause_avant_contournement_s:
-		var d_devant := d_mm if d_mm >= 0.0 else epreuve.distance_arret_mm + arret.decalage_capteur_mm + odo.parcours
+		var d_devant := d_mm if d_mm >= 0.0 else epreuve.distance_arret_mm + robot.ultrason_avant_mm + odo.parcours
 		_demarrer_contournement(d_devant)
 	return Vector2(90.0, 0.0)
 
@@ -359,8 +372,14 @@ func _demarrer_contournement(d_mm: float) -> void:
 		return
 	if contournement_fluide:
 		_noter_repli("place_insuffisante")
-	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_obstacle_mm / 2.0))
+	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_a_contourner_mm() / 2.0))
 	contournement.demarrer(d_mm, _braquage_moyen)
+	if not contournement.choisir_cap(d_mm):
+		# Aucune trajectoire ne passe (#72, choix de Mehdi du 13 nov.) : arret definitif plutot que contact.
+		# ARRET et non BLOQUE : BLOQUE repart des que la ligne est vue, et elle est sous la voiture.
+		_noter_repli("phases_sans_trajectoire")
+		_changer_etat(Etat.ARRET)
+		return
 	contournement.chemin_entrant = memoire.vers_repere_manoeuvre()
 	_changer_etat(Etat.CONTOURNEMENT)
 
@@ -373,7 +392,7 @@ func _cote_contournement() -> int:
 
 
 func _demarrer_fluide(d_mm: float) -> void:
-	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_obstacle_mm / 2.0))
+	memoire.noter_obstacle(odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_a_contourner_mm() / 2.0))
 	fluide.demarrer()
 	_changer_etat(Etat.CONTOURNEMENT_FLUIDE)
 
@@ -383,7 +402,7 @@ func _demarrer_fluide(d_mm: float) -> void:
 func _demarrer_evitement_hors_ligne(d_mm: float) -> void:
 	_evitement_hors_ligne = false
 	_n_echos_hors_ligne = 0
-	memoire.obstacle_hors_ligne = odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_obstacle_mm / 2.0)
+	memoire.obstacle_hors_ligne = odo.point_devant_global(robot.longueur_avant_mm + d_mm + epreuve.profondeur_a_contourner_mm() / 2.0)
 	var c := 1 if suivi.derniere_erreur >= 0.0 else -1
 	if not memoire.ligne.is_empty():
 		var vers := retrouver.cible_ligne(memoire) - Vector2(odo.x_global, odo.y_global)
@@ -468,12 +487,12 @@ func _portee_utile_mm() -> float:
 		return INF                        # ligne droite : toute la portee
 	var rayon := robot.empattement_mm / tan(delta)
 	var a := rayon * tan(deg_to_rad(robot.demi_angle_ultrason_deg))
-	return a + sqrt(a * a + rayon * epreuve.largeur_obstacle_mm)
+	return a + sqrt(a * a + rayon * epreuve.largeur_a_contourner_mm())
 
 
 ## Hors de la ligne : distance (mm, mesuree par l'ultrason) a laquelle la voiture s'arrete pour eviter un obstacle.
 func _distance_evitement_mm() -> float:
-	return contournement.distance_manoeuvre_cm * 10.0 + arret.decalage_capteur_mm + 10.0
+	return contournement.distance_manoeuvre_cm * 10.0 + robot.ultrason_avant_mm + 10.0
 
 
 ## Pendant une orbite ou une recherche, sans ligne sous les sondes : vrai si un autre obstacle que celui contourne est devant.

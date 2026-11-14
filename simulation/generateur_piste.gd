@@ -159,18 +159,116 @@ func _placer_obstacles() -> void:
 			var s_max := minf((i - debut + 1) * t, longueur - p.droite_apres_min) - taille.z
 			if s_max < s_min: continue
 			var s_face := _rng.randf_range(s_min, s_max)
-			obstacles.append(i)
-			tailles_obstacles.append(taille)
-			positions_obstacles.append(s_face + taille.z / 2.0 - ((i - debut) * t + t / 2.0))
-			decalages_obstacles.append(_rng.randf_range(-p.decalage_obstacle_max, p.decalage_obstacle_max))
-			_marquer(chemin[i], OBSTACLE)
+			_ajouter_obstacle(i, debut, s_face, taille, _rng.randf_range(-p.decalage_obstacle_max, p.decalage_obstacle_max))
 			s_libre = s_face + taille.z + p.droite_apres_min + avant
 
+## Obstacle dont la face avant est a s_face (m) du debut du troncon qui commence a la case `debut`, rattache a la case i.
+func _ajouter_obstacle(i: int, debut: int, s_face: float, taille: Vector3, decalage: float) -> void:
+	var t := taille_case()
+	obstacles.append(i)
+	tailles_obstacles.append(taille)
+	positions_obstacles.append(s_face + taille.z / 2.0 - ((i - debut) * t + t / 2.0))
+	decalages_obstacles.append(decalage)
+	_marquer(chemin[i], OBSTACLE)
+
+# ---------------------------------------------------------------- scenario
+## Piste decrite par un scenario (simulation/scenarios.gd) : meme resultat que generer(), sans hasard.
+## La grille entoure le chemin d'une case vide de chaque cote. Retourne false si le scenario est invalide.
+func depuis_scenario(desc: Dictionary) -> bool:
+	graine = 0
+	rayon = float(desc.get("rayon_mm", 120.0)) / 1000.0
+	var cases: Array[Vector2i] = [Vector2i.ZERO]
+	var dir := Vector2i.UP
+	for lettre in String(desc["chemin"]):
+		match lettre:
+			"T": pass
+			"G": dir = Vector2i(dir.y, -dir.x)
+			"D": dir = Vector2i(-dir.y, dir.x)
+			_:
+				push_error("Scenario %s : lettre « %s » inconnue (T, G ou D)." % [desc["nom"], lettre])
+				return false
+		var suivante := cases[-1] + dir
+		if suivante in cases:
+			push_error("Scenario %s : le chemin se croise." % desc["nom"])
+			return false
+		cases.append(suivante)
+	var mini_c := cases[0]
+	var maxi_c := cases[0]
+	for c in cases:
+		mini_c = Vector2i(mini(mini_c.x, c.x), mini(mini_c.y, c.y))
+		maxi_c = Vector2i(maxi(maxi_c.x, c.x), maxi(maxi_c.y, c.y))
+	colonnes = maxi_c.x - mini_c.x + 3
+	lignes = maxi_c.y - mini_c.y + 3
+	if maxi(colonnes, lignes) * taille_case() > TAILLE_SOL_UTILE:
+		push_error("Scenario %s : piste plus grande que le sol." % desc["nom"])
+		return false
+	_vider_matrice()
+	chemin.clear()
+	for c in cases:
+		chemin.append(c - mini_c + Vector2i.ONE)
+		_marquer(chemin[-1], RUBAN)
+	return _placer_obstacles_scenario(desc)
+
+func _placer_obstacles_scenario(desc: Dictionary) -> bool:
+	obstacles.clear()
+	tailles_obstacles.clear()
+	decalages_obstacles.clear()
+	positions_obstacles.clear()
+	var t := taille_case()
+	var troncons := _troncons_droits()
+	var avant := place_avant_obstacle + p.marge_droite_avant
+	var fin_prec := 0.0      # arriere de l'obstacle precedent (m depuis le debut de son troncon)
+	var troncon_prec := -1
+	for o in desc.get("obstacles", []):
+		var k: int = o.get("troncon", 0)
+		if k >= troncons.size():
+			push_error("Scenario %s : pas de troncon droit n° %d (il y en a %d)." % [desc["nom"], k, troncons.size()])
+			return false
+		var debut: int = troncons[k][0]
+		var longueur: float = (troncons[k][1] - debut + 1) * t
+		var mm: Array = o.get("taille_mm", [100, 150, 50])
+		var taille := Vector3(mm[0], mm[1], mm[2]) / 1000.0
+		var face = o.get("face", "min")
+		var s_face := 0.0
+		if face is String:
+			match face:
+				"min": s_face = avant
+				"max": s_face = longueur - p.droite_apres_min - taille.z
+				"apres_precedent":
+					if troncon_prec != k:
+						push_error("Scenario %s : « apres_precedent » sans obstacle precedent sur ce troncon." % desc["nom"])
+						return false
+					s_face = fin_prec + p.droite_apres_min + avant
+				_:
+					push_error("Scenario %s : face « %s » inconnue." % [desc["nom"], face])
+					return false
+		else:
+			s_face = float(face) / 1000.0
+		if s_face < avant - 1e-6 or s_face + taille.z > longueur - p.droite_apres_min + 1e-6:
+			push_warning("Scenario %s : obstacle %d hors de la place exigee (face a %d mm, permis %d a %d mm)." % [
+				desc["nom"], obstacles.size(), roundi(s_face * 1000.0), roundi(avant * 1000.0),
+				roundi((longueur - p.droite_apres_min - taille.z) * 1000.0)])
+		var i := debut + clampi(int((s_face + taille.z / 2.0) / t), 0, troncons[k][1] - debut)
+		_ajouter_obstacle(i, debut, s_face, taille, float(o.get("decalage_mm", 0.0)) / 1000.0)
+		fin_prec = s_face + taille.z
+		troncon_prec = k
+	return true
+
+## Taille (largeur, hauteur, profondeur), puis pose si faces_aleatoires (tiree APRES la taille : avec faces_aleatoires
+## faux, la suite des tirages, donc la piste, est la meme qu'avant le 13 nov.).
 func _tirer_taille() -> Vector3:
 	var t_min := p.taille_obstacle
 	var t_max := p.taille_obstacle_max
-	return Vector3(_rng.randf_range(t_min.x, maxf(t_min.x, t_max.x)), _rng.randf_range(t_min.y, maxf(t_min.y, t_max.y)),
+	var t := Vector3(_rng.randf_range(t_min.x, maxf(t_min.x, t_max.x)), _rng.randf_range(t_min.y, maxf(t_min.y, t_max.y)),
 			_rng.randf_range(t_min.z, maxf(t_min.z, t_max.z)))
+	if p.faces_aleatoires:
+		t = poser(t, _rng.randi_range(0, 5))
+	return t
+
+## Pose n (0 a 5) du bloc : permutation de ses dimensions (largeur, hauteur, profondeur). 0 = tel quel (debout).
+static func poser(t: Vector3, n: int) -> Vector3:
+	return [Vector3(t.x, t.y, t.z), Vector3(t.z, t.y, t.x), Vector3(t.y, t.x, t.z), Vector3(t.z, t.x, t.y),
+			Vector3(t.x, t.z, t.y), Vector3(t.y, t.z, t.x)][n]
 
 ## Troncons de cases droites consecutives [premiere, derniere], hors des cases du depart et de la case d'arrivee.
 func _troncons_droits() -> Array:
@@ -193,6 +291,18 @@ func _case_droite(i: int) -> bool:
 	if chemin[i + 1] - chemin[i] != dir: return false
 	var cote := Vector2i(dir.y, dir.x)
 	return _dans_grille(chemin[i] + cote) and _dans_grille(chemin[i] - cote)
+
+## Vrai si le point (x, z du monde, en m) est sur une case droite du chemin (meme direction en entree et en sortie).
+## Meme repere que ConstructionPiste : grille centree sur l'origine du monde.
+func sur_case_droite(x: float, z: float) -> bool:
+	var t := taille_case()
+	var c := Vector2i(((Vector2(x, z) + Vector2(colonnes, lignes) * t / 2.0) / t).floor())
+	var i := chemin.find(c)
+	if i < 0:
+		return false
+	var d_in := chemin[i] - chemin[i - 1] if i > 0 else Vector2i.UP
+	var d_out := chemin[i + 1] - chemin[i] if i < chemin.size() - 1 else d_in
+	return d_in == d_out
 
 # ---------------------------------------------------------------- outils
 func _vider_matrice() -> void:

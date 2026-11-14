@@ -137,7 +137,7 @@ reglages_robot.gd : empattement_mm passe de 140 à 138 mm, la valeur mesurée du
 Vérifié en simulation Python : contrôleur appelé à 50 Hz puis à 30 Hz avec un servo à 300 °/s, 10 pistes sur 10 terminées et 10 contournements sur 10 dans les deux cas.
 
 Fiche de mesures sur le vrai robot
-Chaque valeur ci-dessous est à mesurer, puis à reporter aux deux endroits indiqués (le contrôleur et le modèle doivent rester identiques).
+**Mis à jour le 13 novembre 2026 : toutes ces valeurs sont maintenant dans un seul fichier, `reglages_robot.json` (racine du dépôt). Les emplacements cités ci-dessous (ReglagesRobot, Vehicule, Simulation, ArretObstacle) sont l'ancien état. Liste à jour : `MESURES_ROBOT.md`. Les méthodes de mesure restent valables.**
 
 Distance essieu arrière → barre de sondes : à la règle. ReglagesRobot.distance_sondes_mm ; vérifier que le modèle 3D donne la même valeur (avertissement au démarrage sinon).
 Distance essieu arrière → ultrason : à la règle. ReglagesRobot.longueur_avant_mm.

@@ -13,31 +13,49 @@ const POINTS_PAR_ARC := 12
 const HAUTEUR_RUBAN := 0.0005   # juste au-dessus du sol, evite le scintillement
 
 static func construire(g: GenerateurPiste) -> Node3D:
+	if g is GenerateurLibre:
+		var libre := g as GenerateurLibre
+		var obstacles_libres := []   # [centre, taille, tangente]
+		for n in libre.obstacles_monde.size():
+			obstacles_libres.append([libre.obstacles_monde[n][0], libre.tailles_obstacles[n], libre.obstacles_monde[n][1]])
+		return construire_depuis_ligne(libre.ligne, obstacles_libres, libre.depart, libre.p.largeur_ruban, libre.rayon, libre.graine)
 	var p := g.p
 	var t := g.taille_case()
 	var origine := -Vector2(g.colonnes, g.lignes) * t / 2.0   # grille centree sur le sol (8 x 8 m)
-	var racine := Node3D.new()
-	racine.name = "PisteAleatoire"
 	var ligne := _ligne_centrale(g, origine, t)
-	racine.add_child(_ruban(ligne, p.largeur_ruban))
-	racine.add_child(_barre_arrivee(ligne))
-	var description_obstacles := []   # [x, z, largeur, profondeur, angle] pour le journal
+	var obstacles := []   # [centre, taille, tangente]
 	for n in g.obstacles.size():
 		var sur_ruban := _point_sur_ruban(g, g.obstacles[n], origine, t)
 		var pos: Vector2 = sur_ruban[0]
 		var tangente: Vector2 = sur_ruban[1]
 		pos += tangente * g.positions_obstacles[n]                         # position le long de la ligne droite
 		pos += Vector2(-tangente.y, tangente.x) * g.decalages_obstacles[n]   # decalage lateral (> 0 = a droite)
-		racine.add_child(_obstacle(pos, g.tailles_obstacles[n], tangente, n))
-		description_obstacles.append([pos.x, pos.y, g.tailles_obstacles[n].x, g.tailles_obstacles[n].z, atan2(tangente.x, tangente.y)])
+		obstacles.append([pos, g.tailles_obstacles[n], tangente])
+	var c := _centre(g.chemin[0], origine, t)
+	return construire_depuis_ligne(ligne, obstacles, c, p.largeur_ruban, g.rayon, g.graine)
+
+## Piste a partir de l'axe du ruban (points (x, z) en m), des obstacles [centre: Vector2, taille: Vector3,
+## tangente: Vector2] et de la position de depart. Commun a la grille et au generateur libre.
+static func construire_depuis_ligne(ligne: PackedVector2Array, obstacles: Array, depart_pos: Vector2, largeur_ruban: float,
+		rayon: float, graine: int) -> Node3D:
+	var racine := Node3D.new()
+	racine.name = "PisteAleatoire"
+	racine.add_child(_ruban(ligne, largeur_ruban))
+	racine.add_child(_barre_arrivee(ligne))
+	var description_obstacles := []   # [x, z, largeur, profondeur, angle] pour le journal
+	for n in obstacles.size():
+		var pos: Vector2 = obstacles[n][0]
+		var taille: Vector3 = obstacles[n][1]
+		var tangente: Vector2 = obstacles[n][2]
+		racine.add_child(_obstacle(pos, taille, tangente, n))
+		description_obstacles.append([pos.x, pos.y, taille.x, taille.z, atan2(tangente.x, tangente.y)])
 	# Geometrie gardee pour le journal CSV (JournalCSV enregistre la piste a cote de l'essai)
 	racine.set_meta("ligne", ligne)
 	racine.set_meta("obstacles", description_obstacles)
-	racine.add_child(DecorPiste.construire(ligne, description_obstacles, g.rayon, g.graine))   # purement visuel
+	racine.add_child(DecorPiste.construire(ligne, description_obstacles, rayon, graine))   # purement visuel
 	var depart := Node3D.new()
 	depart.name = "Depart"
-	var c := _centre(g.chemin[0], origine, t)
-	depart.position = Vector3(c.x, 0, c.y)
+	depart.position = Vector3(depart_pos.x, 0, depart_pos.y)
 	racine.add_child(depart)
 	return racine
 

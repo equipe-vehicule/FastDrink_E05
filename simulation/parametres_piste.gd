@@ -36,6 +36,9 @@ extends Resource
 @export_range(0, 100) var nb_obstacles := 100 ## maximum par piste
 @export var taille_obstacle := Vector3(0.10, 0.15, 0.05) ## largeur, hauteur, profondeur (m) : obstacle reel
 @export var taille_obstacle_max := Vector3(0.10, 0.15, 0.05) ## taille maximale, tiree au hasard (= taille : toujours la meme)
+## Precision du 13 nov. : le bloc peut etre pose sur n'importe quelle face. Vrai : une des 6 poses (permutation de
+## largeur, hauteur, profondeur) tiree au hasard pour chaque obstacle. Faux : toujours debout (pistes d'avant le 13 nov.).
+@export var faces_aleatoires := true
 ## Obstacle pose a la main : ecart maximal de son centre a la ligne (ReglagesEpreuve.tolerance_centrage_mm).
 @export_range(0.0, 0.05, 0.005, "suffix:m") var decalage_obstacle_max := 0.01
 @export_range(2, 20) var cases_libres_depart := 2 ## pas d'obstacle sous la voiture au depart
@@ -46,3 +49,19 @@ extends Resource
 ## Ligne droite exigee apres l'arriere de l'obstacle : retour du contournement fluide sur la ligne
 ## (arriere de la voiture degage de 135 mm puis retour de 450 mm, ligne revue par les sondes) = ~0,58 m.
 @export_range(0.0, 2.0, 0.01, "suffix:m") var droite_apres_min := 0.60
+
+@export_group("Generateur libre")
+## grille = virages de 90 deg seulement (GenerateurPiste) ; libre = virages de angle_min_deg a angle_max_deg, sans grille
+## (GenerateurLibre).
+@export_enum("grille", "libre") var generateur: String = "grille"
+## Le guide n'impose aucun angle, seulement le rayon (#73). HYPOTHESE : bornes choisies par l'equipe.
+@export_range(1.0, 180.0, 1.0, "suffix:deg") var angle_min_deg := 20.0
+@export_range(1.0, 180.0, 1.0, "suffix:deg") var angle_max_deg := 180.0
+## Ecart minimal entre deux parties du ruban non voisines. HYPOTHESE : comme deux lignes paralleles a une case d'ecart sur
+## la grille de 120 mm.
+@export_range(0.01, 1.0, 0.005, "suffix:m") var ecart_lignes_min := 0.24
+## Longueur d'une droite apres un virage. HYPOTHESE : bornes choisies par l'equipe. Maximum 2,5 m : un obstacle demande
+## ~1,3 m de droite (place avant l'obstacle + obstacle + droite_apres_min) ; a 1,2 m, aucune piste n'avait d'obstacle
+## (banc du 13 nov.) ; a 2,5 m, 33 pistes sur 40 en ont au moins un.
+@export_range(0.0, 3.0, 0.01, "suffix:m") var droite_libre_min := 0.15
+@export_range(0.0, 3.0, 0.01, "suffix:m") var droite_libre_max := 2.5

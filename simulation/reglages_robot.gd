@@ -1,24 +1,56 @@
 ## Caracteristiques du robot partagees par tous les algorithmes (geometrie, moteur, servo).
 ## Ce fichier ne depend pas de Godot : la meme logique peut tourner sur le vrai robot.
+## Les valeurs physiques viennent du fichier unique reglages_robot.json (racine du depot), par appliquer() :
+## aucune valeur du robot n'est ecrite ici. Les reglages des algorithmes (rampe, freinage) restent ici.
 class_name ReglagesRobot
 extends RefCounted
 
-const ANGLE_MIN := 45.0           # servo, braquage maximal a gauche
-const ANGLE_MAX := 135.0          # servo, braquage maximal a droite
+const ANGLE_MIN := 45.0           # servo, braquage maximal a gauche (commande)
+const ANGLE_MAX := 135.0          # servo, braquage maximal a droite (commande)
 
-# ----- Geometrie (mm) : A MESURER sur la voiture
-var empattement_mm := 138.0       # mesure : Vehicule.EMPATTEMENT (en m) x 1000
-var longueur_avant_mm := 193.0    # de l'essieu arriere au capteur ultrason (modele 3D ; a confirmer a la regle)
-var distance_sondes_mm := 217.0   # de l'essieu arriere a la barre de sondes de ligne (modele 3D ; a confirmer a la regle)
-var angle_roues_max_deg := 45.0   # angle reel des roues quand le servo est a 45 ou 135 (voir "Roues" au HUD)
-var vitesse_servo_deg_s := 300.0  # A MESURER : vitesse du servo de direction (deg de servo par s ; 0 = instantane)
-var demi_angle_ultrason_deg := 7.5  # demi-ouverture du cone de l'ultrason (HC-SR04 : environ 15 deg au total)
+## Champ de cette classe <- cle de reglages_robot.json (seul endroit ou les noms se correspondent).
+const CLES_JSON := {
+	"empattement_mm": "empattement_mm",
+	"longueur_avant_mm": "essieu_ultrason_mm",
+	"distance_sondes_mm": "essieu_sondes_mm",
+	"ultrason_avant_mm": "ultrason_avant_mm",
+	"largeur_voiture_mm": "largeur_mm",
+	"arriere_voiture_mm": "arriere_voiture_mm",
+	"angle_roues_max_deg": "angle_roues_max_deg",
+	"vitesse_servo_deg_s": "vitesse_servo_deg_s",
+	"demi_angle_ultrason_deg": "demi_angle_ultrason_deg",
+	"mm_s_par_cmd": "vitesse_mm_s_par_cmd",
+}
 
-# ----- Moteur et freinage
-var mm_s_par_cmd := 4.0           # vitesse reelle par unite de commande (0,40 m/s a 100) : A RECALCULER
+# ----- Robot (reglages_robot.json)
+var empattement_mm := 0.0         # essieu avant -> essieu arriere
+var longueur_avant_mm := 0.0      # de l'essieu arriere au capteur ultrason
+var distance_sondes_mm := 0.0     # de l'essieu arriere a la barre de sondes de ligne
+var ultrason_avant_mm := 0.0      # de la face de l'ultrason a l'avant de la voiture
+var largeur_voiture_mm := 0.0     # largeur hors tout
+var arriere_voiture_mm := 0.0     # depassement derriere l'essieu arriere
+var angle_roues_max_deg := 0.0    # angle reel des roues quand le servo est a 45 ou 135
+var vitesse_servo_deg_s := 0.0    # vitesse du servo de direction (deg de servo par s ; 0 = instantane)
+var demi_angle_ultrason_deg := 0.0  # demi-ouverture du cone de l'ultrason
+var mm_s_par_cmd := 0.0           # vitesse reelle par unite de commande
+
+# ----- Algorithmes : moteur et freinage
 var rampe_cmd_par_s := 125.0      # limitation de l'acceleration (bille)
 var marge_freinage := 0.6         # 0..1 : fraction de la rampe utilisee pour freiner
 var vitesse_approche_min := 8     # vitesse minimale d'approche (evite de caler avant la cible)
+
+## Remplit les valeurs du robot depuis {cle JSON: valeur} (FichierReglages.lire). Signale toute cle absente.
+func appliquer(valeurs: Dictionary) -> void:
+	for champ in CLES_JSON:
+		var cle: String = CLES_JSON[champ]
+		if valeurs.has(cle):
+			set(champ, float(valeurs[cle]))
+		else:
+			push_error("ReglagesRobot : « %s » absent de reglages_robot.json." % cle)
+
+## De l'essieu arriere a l'avant de la voiture (capteur + depassement du capteur).
+func avant_voiture_mm() -> float:
+	return longueur_avant_mm + ultrason_avant_mm
 
 ## Commande permettant encore de s'arreter sur restante_mm (deceleration constante :
 ## d = K * c^2 / (2 * rampe * marge)).

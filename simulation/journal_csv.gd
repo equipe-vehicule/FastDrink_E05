@@ -27,7 +27,8 @@ func basculer(piste: Node3D = null) -> void:
 	# Sans ce fichier, Godot importe chaque CSV du projet comme fichier de traduction (.translation, .csv.import)
 	if not FileAccess.file_exists(DOSSIER + "/.gdignore"):
 		FileAccess.open(DOSSIER + "/.gdignore", FileAccess.WRITE).close()
-	_horodatage = Time.get_datetime_string_from_system().replace(":", "-")
+	# PID : deux essais lances dans la meme seconde n'ecrivent pas dans le meme fichier (comme le banc)
+	_horodatage = "%s_%d" % [Time.get_datetime_string_from_system().replace(":", "-"), OS.get_process_id()]
 	_fichier = FileAccess.open("%s/essai_%s.csv" % [DOSSIER, _horodatage], FileAccess.WRITE)
 	_fichier.store_csv_line(PackedStringArray(ENTETE))
 	_n_piste = 0

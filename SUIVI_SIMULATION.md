@@ -1,22 +1,22 @@
 # Suivi de la simulation – FastDrink E05
 
-Mis à jour le 12 novembre 2026 (séquence arrêt → recul → contournement). Ce fichier garde l'état de la simulation, ses limites, les directives pour le portage sur le robot et les tâches restantes. Le détail des modifications est dans `LISEZMOI_SIMULATION.md`.
+Mis à jour le 13 novembre 2026 (contournement par phases vérifié, #72 ; générateur de pistes libre et virages de tout angle, #73 ; stabilité du suivi, rampe d'accélération pour la bille, banc aux cas indépendants ; obstacles posés sur différentes faces ; essais rejouables, boucle à 50 Hz, mesures de stabilité ; fichier unique des valeurs du robot ; avant : séquence arrêt → recul → contournement, 12 nov.). Ce fichier garde l'état de la simulation, ses limites, les directives pour le portage sur le robot et les tâches restantes. Le détail des modifications est dans `LISEZMOI_SIMULATION.md`.
 
-## 0. Où en est le projet et ce qu'il reste à faire (12 novembre)
+## 0. Où en est le projet et ce qu'il reste à faire (13 novembre)
 
 ### Ce qui est fait (simulation Godot)
 
 | Exigence (guide + précisions du professeur) | État en simulation |
 | --- | --- |
 | Suivre un ruban de 18 mm, courbes de 120 mm et plus | Fait : PID + rattrapage en marche arrière dans les virages serrés |
-| S'arrêter à une distance prédéterminée de l'obstacle (± 30 mm) | Fait : erreur max 5,8 mm sur 44 arrêts (D_arret de test = 100 mm) |
+| S'arrêter à une distance prédéterminée de l'obstacle (± 30 mm) | Fait : erreur max 3,9 mm sur le banc de référence (D_arret de test = 100 mm) |
 | Reculer en suivant la ligne (< 200 mm) | Fait : 150 mm (valeur de test) à chaque obstacle ; finit tout droit si la ligne sort des sondes |
 | Devant chaque obstacle : arrêt, recul, puis contournement | Fait : état `RECUL_OBSTACLE`, distances dans `reglages_epreuve.gd` |
-| Contourner l'obstacle (100 × 150 × 50 mm, droit, centré, en ligne droite) | Fait : contournement fluide depuis l'arrêt (rayon choisi par vérification géométrique), repli par phases |
-| Transporter la bille sans la faire tomber | Fait en simulation : marge max 0,88 sur 40 pistes |
+| Contourner l'obstacle (100 × 150 × 50 mm, posé sur n'importe quelle face, centré, en ligne droite) | Fait : contournement fluide de la plus grande emprise possible (150 × 150), repli par phases ; bloc couché de 50 mm vu par le cône vertical de l'ultrason (hypothèse : cône circulaire). Marge latérale min 14 mm sur 40 pistes à faces aléatoires (20 mm visés) |
+| Transporter la bille sans la faire tomber | Fait en simulation : marge max 0,80 sur 40 pistes et 0,82 sur les 17 scénarios avec la rampe d'accélération de 60 cmd/s (13 nov., #67 ; 0,84 et 0,99 avant) |
 | Pistes de test conformes | Pistes aléatoires conformes (obstacles en ligne droite, place pour la manœuvre) ; `test_01` et `test_04` remises aux vraies cotes |
 
-Banc d'essai (40 pistes aléatoires, D_arret 100 / D_recul 150) : 40/40 arrivées, 0 collision, 0 chute, 0 perte de ligne après un contournement. Autres valeurs (50/100, 150/190) : 0 collision ; 100/50 : 1 collision (voir plus bas). Détail : section 9.
+Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucle à 50 Hz, faces de l'obstacle tirées au hasard, cas indépendants (rejouables un par un), rampe d'accélération de 60 cmd/s, `essais/reference_1-240.csv` ; 40/40 verdicts OK, 0 collision. Scénarios ciblés : 25/25 OK (`essais/scenarios_reference.csv`, détail dans `LISEZMOI_SIMULATION.md`). Avec D_recul 50 : 15/15, 0 collision depuis la vérification du contournement par phases (#72, étape 6 ; `essais/reference_recul50.csv`). Pistes libres, virages de 20 à 180° (#73) : 39/40, 0 collision, bille max 0,94 (`essais/reference_libre.csv`) ; échec de la graine 47515, voir plus bas. Stabilité : le suivi zigzague en ligne droite à environ 5 Hz, 8° de roue en médiane ; la bille (1,16 Hz) le filtre. Les réglages essayés pour le réduire (gains, limiteur, zone neutre, gain au centre) font monter la bille ou ajoutent des collisions : non retenus (étape 5). Bancs plus anciens (pas de 1/60 s) : 40/40 arrivées, 0 collision, 0 chute, 0 perte de ligne après un contournement. Autres valeurs (50/100, 150/190) : 0 collision ; 100/50 : 1 collision (voir plus bas). Détail : section 9.
 
 **Ce que la simulation ne garantit pas encore :** elle est idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
 
@@ -38,18 +38,32 @@ Banc d'essai (40 pistes aléatoires, D_arret 100 / D_recul 150) : 40/40 arrivée
 - [ ] Repasser le banc d'essai avec le modèle réaliste : c'est là que les vraies faiblesses apparaîtront (odométrie du contournement fluide en premier).
 
 **3. Algorithmes encore fragiles**
-- [ ] Contournement par phases : vérifier la trajectoire des coins comme le fluide (collision si D_arret + D_recul ≈ 150 mm, graine 71272), ou reculer davantage si le professeur l'autorise.
-- [ ] Suivi sur le parcours fourni : 4 pertes de ligne d'environ 0,6 s dans les virages serrés (rattrapées).
+- [x] Contournement par phases : trajectoire vérifiée avant de partir (cap de 40 à 90°), arrêt sûr en ARRET si rien ne passe (#72, étape 6). D_recul 50 : 15/15, 0 collision.
+- [ ] Contournement fluide : marges min 1,1 mm (D_recul 50, graine 95029) et 7,9 mm (pistes libres). Essai `marge_obstacle_mm` 40 : marges ≥ 25,7 mm mais le fluide n'est plus choisi, temps +13 à +29 % ; décision à prendre.
+- [ ] Obstacle juste avant un virage plus serré que la voiture (graine 47515, pistes libres : épingle de 165° de rayon 126 mm) : la voiture sort du contournement décalée, perd la ligne, BLOQUE après 3 rattrapages.
+- [ ] Bille à 0,94 sur les pistes libres (0,80 sur la grille) : à analyser.
+- [ ] Marge latérale du contournement fluide : 14 mm au pire (bloc de 150 de large décalé de 10 mm) pour 40 mm prévus ; `marge_laterale_mm` à revoir après les mesures du robot.
+- [ ] Ligne droite après l'obstacle (`droite_apres_min` = 0,60 m, hypothèse) : le retour du contournement du pire cas finit environ 0,68 m après l'arrière d'un bloc de 50 de profondeur (perte de ligne de 0,6 s dans `obstacle_avant_virage`) ; à confirmer avec le professeur (#56).
+- [ ] Écho du sol sur l'ultrason (cône vertical, capteur à 60 mm) : non simulé, à mesurer (#53).
+- [x] Pertes de ligne dans les virages de 120 mm (#74) : inévitables avec les sondes à 217 mm devant l'essieu (rayon minimal décrit par la barre : 257 mm), rattrapées en marche arrière. Nombre de rattrapages inchangé avec la rampe de 60 (2 dans `courbes_120`, 4 sur le parcours fourni).
+- [x] Bille après un rattrapage (#67) : rampe d'accélération séparée (`controleur.gd` `rampe_montee_cmd_par_s` = 60, provisoire) ; bille max 0,99 → 0,82 sur les scénarios.
+- [ ] Fin de ligne non reconnue (`courbes_120` sans la rampe de 60) : la voiture reprend la ligne en sens inverse ; le banc ne vérifie pas où a lieu un BLOQUE (contrôle « fin de ligne atteinte » à ajouter).
+- [ ] Rampe d'accélération : à revoir avec la fréquence propre réelle de la bille et la vitesse réelle par commande.
 - [ ] Retour sur la ligne après le contournement fluide : arrivée avec un angle jusqu'à ~29° (piste 4), sans perte de ligne mais à adoucir.
 
 **4. Pistes et exigences à confirmer avec le professeur**
 - [ ] Valeurs officielles de D_arret et D_recul et leurs tolérances (à mettre dans `reglages_epreuve.gd`, puis repasser le banc).
 - [ ] Espacement minimal virage → obstacle et entre deux obstacles (simulation : D_arret + 193 + D_recul + 140 mm, la marge de 140 mm est une hypothèse).
-- [ ] Angles des virages : le générateur ne fait que des quarts de cercle (90°) ; ajouter d'autres angles.
+- [x] Angles des virages : générateur libre (`generateur = "libre"`, angles de 20 à 180°, hypothèses) et scénarios de 45, 135, 180° et S de 60° (#73, étape 6). Confirmer avec le professeur les angles et l'écart minimal entre deux parties du ruban (240 mm supposés).
 - [ ] Côté du contournement imposé ou libre ; largeur du ruban (18 ou 20 mm).
 
 **5. Code et portage**
-- [ ] Tests automatiques des modules (sans Godot), réglages regroupés dans un seul fichier relu aussi par le code Python.
+- [x] Valeurs du robot regroupées dans `reglages_robot.json` (13 nov., #63 partie robot) : lu par la simulation, à relire par le code Python. Banc inchangé (CSV identique).
+- [ ] Gains des algorithmes dans le même fichier (#63, suite) ; tests automatiques des modules (sans Godot).
+- [x] Banc sans éditeur en ligne de commande (`--banc=40 --quitter`, environ 5 min, déterministe). Référence au pas de 1/240 s (13 nov.) ; `vitesse_temps` = 4 fait tourner la physique par pas de 1/60 s (bancs plus anciens).
+- [x] Scénarios courts et rejouables (`--scenarios=tous`, 25 cas depuis l'étape 6, verdict par cas) et mesures de stabilité dans le banc (13 nov., étape 3).
+- [x] Boucle du programme à 50 Hz exacts (elle tournait à 48 Hz, ou à 30 Hz au pas de 1/60 s).
+- [x] Cas du banc indépendants (13 nov., étape 5) : un cas rejoué seul donne le même résultat que dans la série ; option `--journal` (journal détaillé sans éditeur). `--reglage` accepte aussi un réglage du contrôleur lui-même, sans module, ex. `--reglage=rampe_montee_cmd_par_s=40`.
 - [ ] Portage Python module par module (section 4), validation sur le robot avant le 3 décembre, tableau simulation / réel pour le rapport QR (9 décembre).
 
 ## 1. État au 12 novembre, avant la séquence arrêt → recul (historique ; état actuel : section 0)
@@ -188,6 +202,8 @@ Fait le 12 novembre : 3 avertissements GDScript corrigés ; journal CSV avec col
 **Questions pour le professeur :** valeurs officielles de D_arret et D_recul et leurs tolérances ; angles des virages (plage) ; espacement minimal entre deux obstacles et entre un obstacle et un virage ; côté du contournement imposé ou libre ; largeur du ruban (18 ou 20 mm).
 
 ## 9. Séquence arrêt → recul → contournement : code et résultats (12 novembre)
+
+> Résultats du 12 novembre (historique). Résultats à jour (13 nov., étapes 3 à 6) : section 0 et `LISEZMOI_SIMULATION.md`.
 
 Le plan de la section 8 est appliqué ; le détail des fichiers est dans `LISEZMOI_SIMULATION.md`. Les valeurs D_arret = 100 mm et D_recul = 150 mm sont des valeurs de test, à modifier dans `reglages_epreuve.gd`.
 

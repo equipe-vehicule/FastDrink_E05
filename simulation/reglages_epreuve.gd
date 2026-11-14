@@ -24,3 +24,13 @@ var largeur_obstacle_mm := 100.0         # en travers de la ligne
 var hauteur_obstacle_mm := 150.0
 var profondeur_obstacle_mm := 50.0       # dans le sens de la marche
 var tolerance_centrage_mm := 10.0        # obstacle pose a la main : ecart possible de son centre a la ligne
+
+## Precision du 13 nov. : le bloc peut etre pose sur n'importe quelle face (debout, tourne, couche), toujours centre.
+## L'ultrason ne donne qu'une distance : le robot ne sait pas sur quelle face il est pose. Il contourne donc la plus
+## grande emprise au sol possible : la plus grande des 3 dimensions, en travers comme dans le sens de la marche
+## (100 x 150 x 50 -> 150 x 150). Calcule ici pour ne pas ecrire 150 a un second endroit.
+func largeur_a_contourner_mm() -> float:
+	return maxf(largeur_obstacle_mm, maxf(hauteur_obstacle_mm, profondeur_obstacle_mm))
+
+func profondeur_a_contourner_mm() -> float:
+	return maxf(largeur_obstacle_mm, maxf(hauteur_obstacle_mm, profondeur_obstacle_mm))

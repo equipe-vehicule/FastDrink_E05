@@ -34,6 +34,19 @@ var kp := 1.80                    # degres par mm d'ecart
 var ki := 0.5                     # degres par (mm*s). Essai a 0 (12 nov.) : plus de pertes de ligne dans les virages serres
 var kd := 0.08                    # degres par (mm/s)
 
+# ----- Candidats de l'etape 5 (stabilite du suivi, 13 nov.) : DESACTIVES par defaut (comportement inchange).
+# L'erreur mesuree est quantifiee (0, +/-9,5, +/-19, +/-28,5, +/-38 mm : sondes a 19 mm, ruban de 18 mm) : avec kp = 1,8,
+# le plus petit pas vaut deja 17 deg de servo. Comparaison et choix : LISEZMOI_SIMULATION.md (etape 5).
+## C2 : vitesse maximale de la commande de braquage pendant le suivi, ligne vue (deg de servo/s ; 0 = sans limite).
+var vitesse_braquage_max_deg_s := 0.0
+## C3 : zone neutre avec hysteresis. Vrai : une erreur de 9,5 mm (ligne sous 2 sondes, a cote du centre) compte pour 0
+## tant que la voiture vient du centre ; elle compte normalement si la voiture revient d'un ecart de 19 mm ou plus.
+var zone_neutre := false
+## C4 : gain pres du centre (|erreur| <= 9,5 mm), en deg/mm ; < 0 = kp partout. Ordre de grandeur du pure pursuit
+## vise sur la barre de sondes (217 mm devant l'essieu, empattement 138 mm) : 2 x 138 / 217^2 rad/mm = 0,34 deg/mm.
+var kp_centre := -1.0
+const ERREUR_CENTRE_MM := 9.5     # ligne sous la sonde centrale et une voisine
+
 # ----- Vitesses (commande 0..100)
 var vitesse_max := 55             # ligne droite, bien centre. Essais du 12 nov. (parcours fourni) : 40 -> 55,9 s,
 								  # 55 -> 44,4 s sans chute de bille, 70 -> 37,3 s mais la bille tombe
@@ -64,6 +77,8 @@ var _derivee := 0.0
 var _ligne_visible_avant := false
 var _t_aligne := 0.0              # temps depuis lequel la ligne est vue bien centree
 var _n_cinq := 0                  # mesures consecutives avec les 5 sondes allumees
+var _e_effective := 0.0           # erreur vue par le PID apres la zone neutre (C3)
+var _angle_prec := 90.0           # derniere commande de braquage (C2)
 
 ## Retourne Vector2(somme des positions des sondes allumees, nombre de sondes allumees).
 static func lire(sondes: Array) -> Vector2:
@@ -88,6 +103,8 @@ func reinitialiser() -> void:
 	_t_sans_ligne = 0.0               # sinon RETROUVER repartait juste apres un contournement (journal du 6 novembre)
 	_t_aligne = 0.0
 	_n_cinq = 0
+	_e_effective = 0.0
+	_angle_prec = 90.0
 
 ## Derniere position de la ligne vue avant de la perdre (mm, > 0 = a droite). Proche de 0 : la ligne a disparu
 ## sous les sondes centrales, donc devant la voiture (fin de la ligne), et non sur le cote (virage).
@@ -126,7 +143,10 @@ func calculer(sondes: Array, dt: float) -> Vector2:
 		_t_sans_ligne = 0.0
 		_erreur = e
 		ligne = Ligne.VUE
-	_derniere_sortie = _pid(e, dt)
+	_derniere_sortie = _pid(_zone_neutre(e), dt)
+	if vitesse_braquage_max_deg_s > 0.0 and ligne == Ligne.VUE:
+		_derniere_sortie.x = move_toward(_angle_prec, _derniere_sortie.x, vitesse_braquage_max_deg_s * dt)
+	_angle_prec = _derniere_sortie.x
 	_t_aligne = _t_aligne + dt if ligne == Ligne.VUE and absf(_erreur) <= 19.0 else 0.0
 	return _derniere_sortie
 
@@ -146,6 +166,16 @@ func _position(sondes: Array) -> float:
 	if derniere - premiere + 1 != n:
 		return INF
 	return (POSITIONS_SONDES_MM[premiere] + POSITIONS_SONDES_MM[derniere]) / 2.0
+
+## C3 : erreur vue par le PID. Sans zone neutre (ou ligne perdue) : l'erreur mesuree.
+func _zone_neutre(e: float) -> float:
+	if not zone_neutre or is_nan(e):
+		return e
+	if absf(e) <= ERREUR_CENTRE_MM + 0.01 and absf(_e_effective) < 0.01:
+		_e_effective = 0.0        # on vient du centre : 9,5 mm compte pour 0
+	else:
+		_e_effective = e
+	return _e_effective
 
 ## PID. erreur = NAN quand la ligne est perdue. Retourne Vector2(angle, vitesse cible).
 func _pid(erreur: float, dt: float) -> Vector2:
@@ -169,7 +199,8 @@ func _pid(erreur: float, dt: float) -> Vector2:
 		_erreur_prec = erreur
 		_ligne_visible_avant = true
 
-		angle = 90.0 + kp * erreur + ki * _integrale + kd * _derivee
+		var gain := kp_centre if kp_centre >= 0.0 and absf(erreur) <= ERREUR_CENTRE_MM + 0.01 else kp   # C4
+		angle = 90.0 + gain * erreur + ki * _integrale + kd * _derivee
 
 		# Vitesse adaptative : plus on est decentre, plus on ralentit
 		var ratio := clampf(absf(erreur) / ERREUR_MAX_MM, 0.0, 1.0)

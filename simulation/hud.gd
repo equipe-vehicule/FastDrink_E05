@@ -13,7 +13,7 @@ func _ready() -> void:
 func afficher(nom_piste: String, mode_auto: bool, v: Vehicule, mesure: MesureAcceleration, bille_tombee: bool, journal_actif: bool,
 		etat_controleur := "") -> void:
 	var s := v.sondes
-	var accel_laterale := v.vitesse * v.vitesse * tan(v.angle_roues_rad()) / Vehicule.EMPATTEMENT
+	var accel_laterale := v.vitesse * v.vitesse * tan(v.angle_roues_rad()) / v.empattement
 	var ultrason := ("%.1f cm" % v.distance_cm) if v.distance_cm >= 0 else "rien"
 	_label.text = "\n".join([
 		"Piste : %s   |   Mode : %s" % [nom_piste, "AUTOMATIQUE" if mode_auto else "MANUEL"],

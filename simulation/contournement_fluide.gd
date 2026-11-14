@@ -23,9 +23,6 @@ extends RefCounted
 var rayons_candidats_mm := [300.0, 250.0, 220.0, 190.0, 160.0]
 var marge_laterale_mm := 40.0      # entre le flanc de la voiture et l'obstacle (tolerance de centrage en plus)
 var marge_obstacle_mm := 20.0      # marge de la verification geometrique : retard de suivi mesure (12 mm) + marge
-var largeur_voiture_mm := 141.0    # modele 3D (Vehicule.ENCOMBREMENT)
-var avant_voiture_mm := 229.0      # essieu arriere -> avant de la voiture (capteur a 193 mm + 36 mm)
-var arriere_voiture_mm := 45.0     # depassement arriere (LISEZMOI Blender)
 var marge_arriere_mm := 40.0       # le retour commence quand l'arriere a depasse l'obstacle de ca
 ## Retour en quintique : rayon minimal ~ L^2 / (5,77 * ecart) ; a 450 mm et 170 mm d'ecart : ~210 mm.
 var longueur_retour_mm := 450.0
@@ -66,7 +63,7 @@ func _init(robot: ReglagesRobot, odo: Odometrie, epreuve: ReglagesEpreuve) -> vo
 
 ## Decalage lateral de l'essieu necessaire pour passer a cote de l'obstacle (mm).
 func ecart_mm() -> float:
-	return _epreuve.largeur_obstacle_mm / 2.0 + _epreuve.tolerance_centrage_mm + largeur_voiture_mm / 2.0 + marge_laterale_mm
+	return _epreuve.largeur_a_contourner_mm() / 2.0 + _epreuve.tolerance_centrage_mm + _robot.largeur_voiture_mm / 2.0 + marge_laterale_mm
 
 ## d_capteur_mm : distance de l'obstacle lue par l'ultrason, voiture arretee. cote_voulu : 1 = droite, -1 = gauche.
 ## x0_mm, cap0 : position laterale de l'essieu (> 0 = a droite) et cap (> 0 = vers la droite) par rapport a la ligne.
@@ -99,7 +96,7 @@ func _preparer(d_capteur_mm: float, rayon_mm: float) -> void:
 	# capteur et mesure dans l'axe de la voiture, qui peut etre de travers par rapport a la ligne
 	_y_face = (d_capteur_mm + _robot.longueur_avant_mm) * cos(_cap0)
 	_y1 = sqrt(5.77 * maxf(absf(_ecart - _x0), 1.0) * rayon_mm)
-	_y2 = maxf(_y1, _y_face + _epreuve.profondeur_obstacle_mm + arriere_voiture_mm + marge_arriere_mm)
+	_y2 = maxf(_y1, _y_face + _epreuve.profondeur_a_contourner_mm() + _robot.arriere_voiture_mm + marge_arriere_mm)
 	_y3 = _y2 + longueur_retour_mm
 
 func _rayon_retour_mm() -> float:
@@ -108,30 +105,17 @@ func _rayon_retour_mm() -> float:
 ## Parcourt la trajectoire prevue (cote droit ; le cote gauche est symetrique) et verifie qu'aucun coin de la voiture
 ## n'entre dans l'obstacle elargi, et qu'aucun coin de l'obstacle n'entre dans la voiture.
 func _trajectoire_libre() -> bool:
-	var demi := _epreuve.largeur_obstacle_mm / 2.0 + _epreuve.tolerance_centrage_mm + marge_obstacle_mm
+	var demi := _epreuve.largeur_a_contourner_mm() / 2.0 + _epreuve.tolerance_centrage_mm + marge_obstacle_mm
 	var obs_min := Vector2(-demi, _y_face - marge_obstacle_mm)
-	var obs_max := Vector2(demi, _y_face + _epreuve.profondeur_obstacle_mm + marge_obstacle_mm)
-	var coins_obs := [obs_min, Vector2(obs_max.x, obs_min.y), obs_max, Vector2(obs_min.x, obs_max.y)]
-	var demi_l := largeur_voiture_mm / 2.0
+	var obs_max := Vector2(demi, _y_face + _epreuve.profondeur_a_contourner_mm() + marge_obstacle_mm)
 	var y := 0.0
 	var pas := 5.0
 	while y <= _y3:
 		var x := _x_prevu(y)
 		var cap := atan2(_x_prevu(y + 1.0) - x, 1.0)
-		var avant := Vector2(sin(cap), cos(cap))
-		var droite := Vector2(cos(cap), -sin(cap))
-		var essieu := Vector2(x, y)
-		for a in [avant_voiture_mm, -arriere_voiture_mm]:
-			for b in [demi_l, -demi_l]:
-				var c: Vector2 = essieu + avant * a + droite * b
-				if c.x >= obs_min.x and c.x <= obs_max.x and c.y >= obs_min.y and c.y <= obs_max.y:
-					return false
-		for o in coins_obs:
-			var rel: Vector2 = o - essieu
-			var long := rel.dot(avant)
-			var lat := rel.dot(droite)
-			if long >= -arriere_voiture_mm and long <= avant_voiture_mm and absf(lat) <= demi_l:
-				return false
+		if GeometrieVoiture.touche(Vector2(x, y), cap, _robot.avant_voiture_mm(), _robot.arriere_voiture_mm,
+				_robot.largeur_voiture_mm / 2.0, obs_min, obs_max):
+			return false
 		y += pas
 	return true
 

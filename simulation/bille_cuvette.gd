@@ -6,15 +6,24 @@ extends RigidBody3D
 
 signal chute
 
-const RAYON := 0.0075
-# Cuvette : rayon de courbure 140 mm, bord a 20 mm du centre, 1,5 mm de profondeur
-const R_CUVETTE := 0.140
-const R_BORD := 0.02
 const G := 9.81
 
+# Valeurs de la bille et de la cuvette : fichier unique reglages_robot.json, remplies par regler() avant add_child.
+var rayon := 0.0           # m, rayon de la bille
+var r_cuvette := 0.0       # m, rayon de courbure de la cuvette
+var r_bord := 0.0          # m, bord de la cuvette (distance au centre)
+
 var vehicule: Vehicule
-var masse := 0.010         ## kg
-var amortissement := 1.0   ## 1/s, pertes par roulement
+var masse := 0.0           ## kg
+var amortissement := 0.0   ## 1/s, pertes par roulement
+
+## Valeurs depuis {cle JSON: valeur} (FichierReglages.lire). Conversion mm -> m par / 1000.0.
+func regler(r: Dictionary) -> void:
+	rayon = float(r["rayon_bille_mm"]) / 1000.0
+	r_cuvette = float(r["rayon_cuvette_mm"]) / 1000.0
+	r_bord = float(r["rayon_bord_cuvette_mm"]) / 1000.0
+	masse = float(r["masse_bille_kg"])
+	amortissement = float(r["amortissement_bille_1_s"])
 
 var prete := false
 var tombee := false
@@ -33,7 +42,7 @@ func _ready() -> void:
 	collision_layer = Couches.BILLE; collision_mask = Couches.SOL | Couches.VEHICULE
 	var pm := PhysicsMaterial.new(); pm.friction = 0.4; pm.bounce = 0.0
 	physics_material_override = pm
-	var cs := CollisionShape3D.new(); var sp := SphereShape3D.new(); sp.radius = RAYON
+	var cs := CollisionShape3D.new(); var sp := SphereShape3D.new(); sp.radius = rayon
 	cs.shape = sp; add_child(cs)
 	var modele := (load("res://assets/picar/bille.glb") as PackedScene).instantiate()
 	for m in modele.find_children("*", "MeshInstance3D"):
@@ -51,7 +60,7 @@ func replacer() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
 	linear_velocity = Vector3.ZERO; angular_velocity = Vector3.ZERO
-	global_transform = Transform3D(Basis(), vehicule.position_bille(RAYON))
+	global_transform = Transform3D(Basis(), vehicule.position_bille(rayon))
 	prete = true
 
 ## Bille qui roule sans glisser dans une cuvette spherique, dans le repere de la voiture.
@@ -62,13 +71,13 @@ func mettre_a_jour(dt: float) -> void:
 	if not prete or tombee: return
 	var t := vehicule.global_transform
 	var a_loc := _acceleration_locale(t, dt)
-	var rc := R_CUVETTE - RAYON
+	var rc := r_cuvette - rayon
 	var acc := (5.0 / 7.0) * (-G * _q / rc - a_loc) - amortissement * _dq
 	_dq += acc * dt
 	_q += _dq * dt
-	var hauteur := RAYON + _q.length_squared() / (2.0 * rc)
+	var hauteur := rayon + _q.length_squared() / (2.0 * rc)
 	global_transform = Transform3D(Basis(), vehicule.centre_plaquette() + t.basis * Vector3(_q.x, hauteur, -_q.y))
-	if _q.length() * R_CUVETTE / rc >= R_BORD:
+	if _q.length() * r_cuvette / rc >= r_bord:
 		_tomber(t)
 
 # Acceleration de la plaquette (differences finies), exprimee en (droite, avant)
@@ -84,11 +93,16 @@ func _acceleration_locale(t: Transform3D, dt: float) -> Vector2:
 	_p1 = p; _n_mesures += 1
 	return Vector2(t.basis.x.dot(a_monde), -t.basis.z.dot(a_monde))
 
+## Frequence propre des petites oscillations (Hz), tiree de l'equation de mettre_a_jour() sans amortissement :
+## f0 = (1 / 2 pi) * sqrt(5/7 * g / (R - r)).
+func frequence_propre_hz() -> float:
+	return sqrt(5.0 / 7.0 * G / (r_cuvette - rayon)) / TAU
+
 ## Position de la bille rapportee au bord de la cuvette : 0 = au centre, 1 = elle tombe.
 func taux_bord() -> float:
 	if tombee:
 		return 1.0
-	return _q.length() * R_CUVETTE / (R_CUVETTE - RAYON) / R_BORD
+	return _q.length() * r_cuvette / (r_cuvette - rayon) / r_bord
 
 func _tomber(t: Transform3D) -> void:
 	tombee = true

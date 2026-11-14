@@ -20,10 +20,12 @@ var place_avant_obstacle := 0.0   # m, transmis au generateur (voir GenerateurPi
 var generateur: GenerateurPiste   # derniere piste aleatoire (matrice, chemin, graine)
 var index := 0
 var actuelle: Node3D
+var scenario := ""                # nom du scenario charge ("" = aucun ; voir charger_scenario)
 
 ## graine : seulement pour la piste aleatoire. 0 = celle des parametres (ou une nouvelle si elle vaut 0 aussi).
 func charger(i: int, graine := 0) -> void:
 	index = clampi(i, 0, LISTE.size() - 1)
+	scenario = ""
 	if actuelle: actuelle.queue_free()
 	if LISTE[index][1] == "":
 		actuelle = _generer(graine)
@@ -35,13 +37,39 @@ func charger(i: int, graine := 0) -> void:
 func _generer(graine: int) -> Node3D:
 	if graine == 0:
 		graine = parametres.graine if parametres.graine != 0 else randi_range(1, 999999)
-	generateur = GenerateurPiste.new(parametres)
+	if parametres.generateur == "libre":
+		generateur = GenerateurLibre.new(parametres)
+	else:
+		generateur = GenerateurPiste.new(parametres)
 	generateur.place_avant_obstacle = place_avant_obstacle
 	generateur.generer(graine)
 	print(generateur.en_texte())
 	return ConstructionPiste.construire(generateur)
 
+## Piste d'un scenario (simulation/scenarios.gd). Retourne false si le scenario est invalide (piste non changee).
+func charger_scenario(desc: Dictionary) -> bool:
+	var g: GenerateurPiste
+	if desc.has("trace"):
+		g = GenerateurLibre.new(parametres)
+	else:
+		g = GenerateurPiste.new(parametres)
+	g.place_avant_obstacle = place_avant_obstacle
+	if not g.depuis_scenario(desc):
+		return false
+	generateur = g
+	index = INDEX_ALEATOIRE
+	scenario = desc["nom"]
+	if actuelle: actuelle.queue_free()
+	print("Scenario %s" % scenario)
+	print(generateur.en_texte())
+	actuelle = ConstructionPiste.construire(generateur)
+	add_child(actuelle)
+	_regler_couches(actuelle)
+	return true
+
 func nom() -> String:
+	if scenario != "":
+		return "Scenario %s" % scenario
 	if LISTE[index][1] == "" and generateur:
 		return "%s (graine %d)" % [LISTE[index][0], generateur.graine]
 	return LISTE[index][0]

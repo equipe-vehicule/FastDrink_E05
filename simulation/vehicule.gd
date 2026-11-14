@@ -12,22 +12,41 @@
 class_name Vehicule
 extends AnimatableBody3D
 
-# ---------- Geometrie (mesuree, voir 07_Modelisation-Blender/LISEZMOI.md)
-const EMPATTEMENT := 0.138          # m, axe avant -> axe arriere
-const RAYON_ROUE := 0.0325          # m (1 tour de roue = 205 mm)
+# ---------- Valeurs du robot : fichier unique reglages_robot.json (valeur, unite, statut, source, tache).
+# Remplies par regler() AVANT add_child (donc avant _ready). Aucune valeur ici : voir le fichier.
+var empattement := 0.0              # m, axe avant -> axe arriere
+var rayon_roue := 0.0               # m
+var encombrement := Vector3.ZERO    # m (largeur, hauteur, longueur) : boite de collision du vehicule
+var centre_encombrement := Vector3.ZERO  # m, centre de cette boite par rapport a l'origine du vehicule
+var vitesse_max := 0.0              # m/s atteinte a la commande 100 (= vitesse_mm_s_par_cmd x 100)
+var angle_roues_max_deg := 0.0      # angle reel des roues pour un servo a 45 ou 135
+var vitesse_servo_deg_s := 0.0      # deg de servo par seconde (0 = instantane)
+var constante_temps_moteur := 0.0   # s, temps de reponse du moteur (0 = instantane)
+var zone_morte_moteur := 0          # commande minimale (valeur absolue) qui fait tourner les roues
+var bruit_ultrason_cm := 0.0        # ecart-type du bruit de l'ultrason
+var portee_ultrason := 0.0          # m ; au-dela, la mesure vaut -1 (comme la bibliotheque SunFounder)
+var frequence_ultrason_hz := 0.0    # mesures par seconde (0 = a chaque pas)
+var demi_angle_ultrason_deg := 0.0  # demi-ouverture du cone de l'ultrason
+var rayon_tache_sonde := 0.0        # m, rayon de la zone vue par une sonde
+var proba_erreur_sonde := 0.0       # probabilite qu'une sonde donne une lecture fausse a chaque mesure
 
-# ---------- Parametres A MESURER sur le vrai robot (valeurs provisoires)
-@export var vitesse_max := 0.40          ## m/s atteinte a la commande 100. PROVISOIRE : a mesurer (test de vitesse).
-@export var angle_roues_max_deg := 45.0  ## angle reel des roues pour un servo a 45 ou 135. PROVISOIRE : a mesurer (test du cercle).
-@export var vitesse_servo_deg_s := 300.0 ## deg de servo par seconde (0 = instantane). PROVISOIRE : chronometrer 45 -> 135.
-@export var constante_temps_moteur := 0.0  ## s, temps de reponse du moteur (0 = instantane). PROVISOIRE.
-@export var zone_morte_moteur := 0       ## commande minimale (valeur absolue) qui fait tourner les roues. PROVISOIRE : a mesurer.
-@export var bruit_ultrason_cm := 0.0     ## ecart-type du bruit de l'ultrason. A fixer avec le rapport « Test ta confiance ».
-@export var portee_ultrason := 3.0       ## m ; au-dela, la mesure vaut -1 (comme la bibliotheque SunFounder)
-@export var frequence_ultrason_hz := 20.0  ## mesures par seconde (HC-SR04 : environ 20 au plus ; 0 = a chaque pas)
-@export var demi_angle_ultrason_deg := 7.5 ## demi-ouverture du cone de l'ultrason (HC-SR04 : environ 15 deg au total)
-@export var rayon_tache_sonde := 0.003   ## m, rayon de la zone vue par une sonde. PROVISOIRE : a ajuster sur le vrai robot.
-@export var proba_erreur_sonde := 0.0    ## probabilite qu'une sonde donne une lecture fausse a chaque mesure. PROVISOIRE.
+## Valeurs du robot depuis {cle JSON: valeur} (FichierReglages.lire). Conversion mm -> m par / 1000.0.
+func regler(r: Dictionary) -> void:
+	empattement = float(r["empattement_mm"]) / 1000.0
+	rayon_roue = float(r["rayon_roue_mm"]) / 1000.0
+	encombrement = Vector3(float(r["largeur_mm"]), float(r["hauteur_mm"]), float(r["longueur_mm"])) / 1000.0
+	centre_encombrement = Vector3(0.0, float(r["centre_encombrement_y_mm"]), float(r["centre_encombrement_z_mm"])) / 1000.0
+	vitesse_max = float(r["vitesse_mm_s_par_cmd"]) * 100.0 / 1000.0
+	angle_roues_max_deg = float(r["angle_roues_max_deg"])
+	vitesse_servo_deg_s = float(r["vitesse_servo_deg_s"])
+	constante_temps_moteur = float(r["constante_temps_moteur_s"])
+	zone_morte_moteur = int(r["zone_morte_moteur_cmd"])
+	bruit_ultrason_cm = float(r["bruit_ultrason_cm"])
+	portee_ultrason = float(r["portee_ultrason_m"])
+	frequence_ultrason_hz = float(r["frequence_ultrason_hz"])
+	demi_angle_ultrason_deg = float(r["demi_angle_ultrason_deg"])
+	rayon_tache_sonde = float(r["rayon_tache_sonde_mm"]) / 1000.0
+	proba_erreur_sonde = float(r["proba_erreur_sonde"])
 
 # ---------- Etat
 var commande_vitesse := 0                # -100 .. 100
@@ -46,18 +65,20 @@ var _rayons_sondes: Array = []           # 5 sondes x 5 rayons (centre + 4 autou
 var _rayons_ultrason: Array = []         # cone : axe + 2 rayons a +/- demi_angle_ultrason_deg
 var _t_ultrason := 0.0
 var _requete_collision: PhysicsShapeQueryParameters3D
-const ENCOMBREMENT := Vector3(0.141, 0.080, 0.285)          # m (largeur, hauteur, longueur) du modele
-const CENTRE_ENCOMBREMENT := Vector3(0, 0.047, -0.0175)
 var _roues := {}
 var _rotation_roues := 0.0
 var _placement_en_attente := false
 var _placement := Transform3D()
+## Pose calculee par le modele cinematique. On ne relit pas global_transform : avec sync_to_physics, elle repasse par
+## le serveur physique et garde un reste (1e-7) de l'orientation du cas precedent (banc non rejouable, 13 nov.).
+var _pose := Transform3D()
 
 const COUCHE_OBSTACLES := 1
 const COUCHE_RUBAN := 2
 const COUCHE_VEHICULE := 8   # couche 4
 
 func _ready() -> void:
+	_pose = global_transform
 	sync_to_physics = true
 	collision_layer = COUCHE_VEHICULE
 	collision_mask = 0
@@ -86,17 +107,22 @@ func _ready() -> void:
 			add_child(r)
 			groupe.append(r)
 		_rayons_sondes.append(groupe)
-	# Ultrason : cone vers l'avant (-Z) qui voit les obstacles (couche 1), la plus courte distance l'emporte
-	for a in [0.0, deg_to_rad(demi_angle_ultrason_deg), -deg_to_rad(demi_angle_ultrason_deg)]:
+	# Ultrason : cone vers l'avant (-Z) qui voit les obstacles (couche 1), la plus courte distance l'emporte.
+	# 5 rayons : l'axe, +/- demi_angle a gauche et a droite, +/- demi_angle en haut et en bas.
+	# HYPOTHESE : cone circulaire (meme demi-angle en hauteur ; le manuel p. 34 donne un cone de 30 a 40 deg sans
+	# distinguer). Le rayon du bas voit un obstacle couche de 50 mm, plus bas que le capteur (60 mm du sol).
+	# Le sol n'est pas sur la couche des obstacles : un echo du sol sur le vrai capteur n'est PAS simule (#53).
+	var demi := deg_to_rad(demi_angle_ultrason_deg)
+	for axe_angle in [[Vector3.UP, 0.0], [Vector3.UP, demi], [Vector3.UP, -demi], [Vector3.RIGHT, demi], [Vector3.RIGHT, -demi]]:
 		var r := RayCast3D.new()
 		r.position = (racine.get_node("Capteur_Ultrason") as Node3D).position
-		r.target_position = Vector3(0, 0, -portee_ultrason).rotated(Vector3.UP, a)
+		r.target_position = Vector3(0, 0, -portee_ultrason).rotated(axe_angle[0], axe_angle[1])
 		r.collision_mask = COUCHE_OBSTACLES
 		add_child(r)
 		_rayons_ultrason.append(r)
 	# Detection de collision avec un obstacle : requete sur la boite d'encombrement du vehicule
 	_requete_collision = PhysicsShapeQueryParameters3D.new()
-	var b := BoxShape3D.new(); b.size = ENCOMBREMENT
+	var b := BoxShape3D.new(); b.size = encombrement
 	_requete_collision.shape = b
 	_requete_collision.collision_mask = COUCHE_OBSTACLES
 	_requete_collision.collide_with_areas = false
@@ -104,11 +130,19 @@ func _ready() -> void:
 ## Place le vehicule (applique a la prochaine etape physique, obligatoire avec sync_to_physics).
 func placer(t: Transform3D) -> void:
 	_placement = t
+	_pose = t
 	_placement_en_attente = true
 	global_transform = t
 	vitesse = 0.0
 	distance_parcourue = 0.0
 	angle_servo_reel = 90.0
+	# Comme un vehicule neuf : sinon le cas suivant du banc demarre avec l'acceleration et les sondes du cas
+	# precedent (barre d'arrivee 11111) et n'est plus rejouable seul (graine 221733 : bille 0,79 seule, 0,97 en serie)
+	acceleration = 0.0
+	sondes = [0, 0, 0, 0, 0]
+	distance_cm = -1.0
+	en_collision = false
+	_t_ultrason = 0.0
 
 ## Applique les commandes (bornees comme sur le vrai robot).
 func commander(vitesse_cmd: int, servo: int) -> void:
@@ -120,21 +154,23 @@ func angle_roues_rad() -> float:
 	return deg_to_rad((angle_servo_reel - 90.0) * angle_roues_max_deg / 45.0)
 
 ## Distances mesurees sur le modele 3D (mm), pour verifier que le controleur utilise les memes.
-## Reference : milieu de l'essieu arriere, a EMPATTEMENT / 2 derriere l'origine du vehicule.
+## Reference : milieu de l'essieu arriere, a empattement / 2 derriere l'origine du vehicule.
 func geometrie_mm() -> Dictionary:
 	var racine := _modele.get_node("PiCar")
-	var z_essieu := EMPATTEMENT / 2.0
+	var z_essieu := empattement / 2.0
 	return {
-		"empattement_mm": EMPATTEMENT * 1000.0,
+		"empattement_mm": empattement * 1000.0,
 		"distance_sondes_mm": (z_essieu - (racine.get_node("Sonde_3") as Node3D).position.z) * 1000.0,
 		"longueur_avant_mm": (z_essieu - (racine.get_node("Capteur_Ultrason") as Node3D).position.z) * 1000.0,
+		"hauteur_ultrason_mm": (racine.get_node("Capteur_Ultrason") as Node3D).position.y * 1000.0,
 	}
 
 func _physics_process(dt: float) -> void:
 	if _placement_en_attente:
 		global_transform = _placement
 		_placement_en_attente = false
-		_lire_capteurs(dt, true)
+		# Pas de lecture des capteurs a ce pas : l'ancienne piste n'est pas encore liberee et la nouvelle pas encore
+		# dans l'espace physique (banc : sondes 11111 de l'ancienne barre d'arrivee, 13 nov.). Lecture au pas suivant.
 		return
 	# Servo : tourne vers la commande a vitesse finie
 	if vitesse_servo_deg_s <= 0.0:
@@ -153,27 +189,27 @@ func _physics_process(dt: float) -> void:
 		vitesse += (cible - vitesse) * (1.0 - exp(-dt / constante_temps_moteur))
 	acceleration = (vitesse - v_prec) / dt
 	# Modele cinematique « bicyclette », reference = milieu de l'essieu arriere
-	var t := global_transform
+	var t := _pose
 	var avant := -t.basis.z
-	var essieu_ar := t.origin + t.basis.z * (EMPATTEMENT / 2.0)
+	var essieu_ar := t.origin + t.basis.z * (empattement / 2.0)
 	essieu_ar += avant * vitesse * dt
-	var lacet := -vitesse / EMPATTEMENT * tan(angle_roues_rad()) * dt   # angle > 90 : virage a droite
+	var lacet := -vitesse / empattement * tan(angle_roues_rad()) * dt   # angle > 90 : virage a droite
 	t.basis = t.basis.rotated(Vector3.UP, lacet).orthonormalized()
-	t.origin = essieu_ar - t.basis.z * (EMPATTEMENT / 2.0)
+	t.origin = essieu_ar - t.basis.z * (empattement / 2.0)
+	_pose = t
 	global_transform = t
 	distance_parcourue += abs(vitesse) * dt
 	_animer_roues(dt)
 	_lire_capteurs(dt)
 
 func _animer_roues(dt: float) -> void:
-	_rotation_roues -= vitesse * dt / RAYON_ROUE
+	_rotation_roues -= vitesse * dt / rayon_roue
 	for n in _roues:
 		var roue: Node3D = _roues[n]
 		var braquage := -angle_roues_rad() if n.begins_with("Roue_AV") else 0.0
 		roue.basis = Basis(Vector3.UP, braquage) * Basis(Vector3.RIGHT, _rotation_roues)
 
-## forcer : mesure l'ultrason tout de suite (placement), sans attendre sa cadence.
-func _lire_capteurs(dt: float, forcer := false) -> void:
+func _lire_capteurs(dt: float) -> void:
 	for i in 5:
 		var vu := 0
 		for r in _rayons_sondes[i]:
@@ -183,10 +219,10 @@ func _lire_capteurs(dt: float, forcer := false) -> void:
 			vu = 1 - vu
 		sondes[i] = vu
 	_t_ultrason += dt
-	if forcer or frequence_ultrason_hz <= 0.0 or _t_ultrason >= 1.0 / frequence_ultrason_hz:
+	if frequence_ultrason_hz <= 0.0 or _t_ultrason >= 1.0 / frequence_ultrason_hz:
 		_t_ultrason = 0.0
 		_mesurer_ultrason()
-	_requete_collision.transform = global_transform * Transform3D(Basis(), CENTRE_ENCOMBREMENT)
+	_requete_collision.transform = global_transform * Transform3D(Basis(), centre_encombrement)
 	en_collision = not get_world_3d().direct_space_state.intersect_shape(_requete_collision, 1).is_empty()
 
 # Entre deux mesures, distance_cm garde la valeur precedente (comme une lecture du vrai capteur).

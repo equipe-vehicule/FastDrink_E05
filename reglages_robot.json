@@ -1,0 +1,44 @@
+{
+  "_info": {
+    "but": "Valeurs physiques du robot PiCar-S n° 05 (FastDrink E05), à un seul endroit. Lu par la simulation Godot (simulation/fichier_reglages.gd) et plus tard par le code Python du robot (json.load).",
+    "format": "Chaque entrée : valeur, unite, statut (provisoire ou mesuré), source, tache (GitHub, Project 3).",
+    "mise_a_jour": "Après une mesure : remplacer la valeur, passer le statut à « mesuré », écrire la source (date, méthode, tâche), mettre à jour MESURES_ROBOT.md, puis relancer les essais de la simulation.",
+    "hors_fichier": "Gains et choix des algorithmes (PID, rampe, vitesses de manœuvre) : dans leurs modules. Valeurs de l'épreuve : simulation/reglages_epreuve.gd. Pistes : simulation/parametres_piste.gd."
+  },
+
+  "empattement_mm": {"valeur": 138.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D picar.blend (07_Modelisation-Blender/LISEZMOI.md). Manuel PiCar-S : non précisé.", "tache": "#49"},
+  "rayon_roue_mm": {"valeur": 32.5, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D picar.blend (roue de 65 mm, 205 mm par tour). Manuel PiCar-S : non précisé.", "tache": "#49"},
+  "essieu_ultrason_mm": {"valeur": 193.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : milieu de l'essieu arrière → face de l'ultrason. À confirmer à la règle.", "tache": "#49"},
+  "essieu_sondes_mm": {"valeur": 217.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : milieu de l'essieu arrière → barre de sondes de ligne. À confirmer à la règle.", "tache": "#49"},
+  "ultrason_avant_mm": {"valeur": 36.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : face de l'ultrason → avant du robot. ÉCART : code_picar/fastdrink/config.py (branche main) ULTRASONIC_OFFSET = 35.3.", "tache": "#20"},
+  "hauteur_ultrason_mm": {"valeur": 60.0, "unite": "mm", "statut": "provisoire", "source": "07_Modelisation-Blender/LISEZMOI.md : « Ultrason : hauteur du centre 60 mm », mesure à la règle. Position du capteur dans le modèle 3D (picar.glb), vérifiée au démarrage. Risque : obstacle couché de 50 mm de haut.", "tache": "#53"},
+  "arriere_voiture_mm": {"valeur": 45.0, "unite": "mm", "statut": "provisoire", "source": "07_Modelisation-Blender/LISEZMOI.md : dépassement derrière l'essieu arrière. ÉCART : la boîte d'encombrement ci-dessous donne 56 mm (285 − 229).", "tache": "#49"},
+  "largeur_mm": {"valeur": 141.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : encombrement (largeur hors tout).", "tache": "#49"},
+  "hauteur_mm": {"valeur": 80.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : encombrement (hauteur de la boîte de collision).", "tache": "#49"},
+  "longueur_mm": {"valeur": 285.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : encombrement (longueur hors tout).", "tache": "#49"},
+  "centre_encombrement_y_mm": {"valeur": 47.0, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : hauteur du centre de la boîte de collision au-dessus de l'origine du véhicule.", "tache": "#49"},
+  "centre_encombrement_z_mm": {"valeur": -17.5, "unite": "mm", "statut": "provisoire", "source": "Modèle 3D : position du centre de la boîte de collision le long du véhicule (négatif = vers l'avant).", "tache": "#49"},
+
+  "vitesse_mm_s_par_cmd": {"valeur": 4.0, "unite": "mm/s par unité de commande", "statut": "provisoire", "source": "Hypothèse : vitesse proportionnelle à la commande (0,40 m/s à 100). Premières mesures (rapport des filtres, démarrage compris) : 48–52 mm/s à 20, 112–115 à 30, 256 à 50. Manuel : vitesse en mm/s non précisée.", "tache": "#18"},
+  "zone_morte_moteur_cmd": {"valeur": 0, "unite": "commande (0–100)", "statut": "provisoire", "source": "Non modélisée. ≈ 13 noté dans SUIVI_SIMULATION.md, sans mesure documentée.", "tache": "#51"},
+  "constante_temps_moteur_s": {"valeur": 0.0, "unite": "s", "statut": "provisoire", "source": "Moteur instantané (non mesuré).", "tache": "#51"},
+
+  "angle_roues_max_deg": {"valeur": 45.0, "unite": "°", "statut": "provisoire", "source": "Angle des roues avec le servo à 45 ou 135. Manuel PiCar-S : non précisé (p. 47 raisonne avec 45°).", "tache": "#19"},
+  "vitesse_servo_deg_s": {"valeur": 300.0, "unite": "° de servo par s", "statut": "provisoire", "source": "Valeur provisoire. Manuel p. 61 (servo à vide) : 0,14 s/60° à 4,8 V, 0,12 s/60° à 6 V, soit ≈ 430 à 500 °/s ; en charge : non précisé.", "tache": "#51"},
+
+  "demi_angle_ultrason_deg": {"valeur": 7.5, "unite": "°", "statut": "provisoire", "source": "Cône de 15° au total. ÉCART : manuel p. 34 « about 30~40 degrees », p. 60 « about 30 degrees ».", "tache": "#53"},
+  "frequence_ultrason_hz": {"valeur": 20.0, "unite": "mesures/s", "statut": "provisoire", "source": "Valeur provisoire. ÉCART : manuel p. 32 conseille un cycle de plus de 60 ms (au plus 16,7 mesures/s) ; config.py (main) ULTRASON_PERIODE_MIN_S = 0.06.", "tache": "#53"},
+  "portee_ultrason_m": {"valeur": 3.0, "unite": "m", "statut": "provisoire", "source": "Au-delà, la mesure vaut -1 (bibliothèque SunFounder). Portée : non précisée dans le manuel.", "tache": "#53"},
+  "bruit_ultrason_cm": {"valeur": 0.0, "unite": "cm (écart type)", "statut": "provisoire", "source": "Non modélisé. Mesure existante à reporter : écart type ≈ 2,4 mm à l'arrêt (rapport des filtres).", "tache": "#53"},
+
+  "rayon_tache_sonde_mm": {"valeur": 3.0, "unite": "mm", "statut": "provisoire", "source": "Rayon de la zone vue par une sonde de ligne (TCRT5000, manuel p. 44). Valeur provisoire.", "tache": "#52"},
+  "proba_erreur_sonde": {"valeur": 0.0, "unite": "probabilité par mesure", "statut": "provisoire", "source": "Lectures fausses des sondes non modélisées.", "tache": "#52"},
+
+  "rayon_bille_mm": {"valeur": 7.5, "unite": "mm", "statut": "provisoire", "source": "Valeur du code. Le plan support_bille_v2 ne cote pas la bille : à mesurer (bille fournie dans la boîte).", "tache": "#50"},
+  "rayon_cuvette_mm": {"valeur": 140.0, "unite": "mm", "statut": "provisoire", "source": "Plan support_bille_v2 : R140.00 (unité non écrite). À vérifier sur la pièce.", "tache": "#47"},
+  "rayon_bord_cuvette_mm": {"valeur": 20.0, "unite": "mm", "statut": "provisoire", "source": "Plan support_bille_v2 : cuvette Ø40.00, rayon 20 (unité non écrite). À vérifier sur la pièce.", "tache": "#47"},
+  "masse_bille_kg": {"valeur": 0.010, "unite": "kg", "statut": "provisoire", "source": "À peser. N'influence pas la chute dans le modèle actuel.", "tache": "#50"},
+  "amortissement_bille_1_s": {"valeur": 1.0, "unite": "1/s", "statut": "provisoire", "source": "Pertes par roulement de la bille : à comparer avec le vrai robot.", "tache": "#47"},
+
+  "frequence_controle_hz": {"valeur": 50.0, "unite": "Hz", "statut": "provisoire", "source": "Fréquence de la boucle du programme du robot. À mesurer sur le Raspberry Pi.", "tache": "#64"}
+}

@@ -40,8 +40,13 @@
 ## Le servo met du temps a braquer : les changements de phase sont anticipes (_retard_mm).
 ## Le Controleur choisit ce contournement quand le contournement fluide n'a pas la place (ContournementFluide.choisir :
 ## aucun rayon ne passe sans toucher l'obstacle), et pour eviter un obstacle quand la voiture n'est pas sur la ligne.
-## LIMITE : ECART prend cap_evitement_deg sans verifier la trajectoire des coins de la voiture ; avec peu de place
-## (arret + recul ~150 mm), le coin peut toucher l'obstacle (banc du 12 nov., graine 71272, 100 / 50 mm).
+## VERIFICATION (13 nov., #72) : avant de partir, choisir_cap() rejoue la manoeuvre prevue (ECART, LONGER, debut du
+## RETOUR) avec la meme loi de commande et le modele bicyclette, et verifie que la voiture ne touche pas l'obstacle
+## (GeometrieVoiture). Premier cap de caps_evitement_candidats_deg qui passe ; aucun : la manoeuvre est refusee et le
+## Controleur s'arrete (choix de Mehdi : arret sur plutot que contact, pas de recul supplementaire).
+## Avant : cap de 40 deg sans verification ; avec arret + recul = 150 mm, le coin avant touchait un bloc de 150 de
+## large (banc D_recul 50, graine 63353 : la loi de cap proportionnelle n'avait decale la voiture que de 43 mm apres
+## 142 mm d'avance).
 class_name Contournement
 extends RefCounted
 
@@ -57,7 +62,11 @@ var vitesse_manoeuvre := 25       # Banc d'essai du 12 nov. : a 40, la bille tom
 var distance_manoeuvre_cm := 30.0
 var distance_securite_mm := 40.0  # arret d'urgence si un obstacle apparait tout pres pendant la manoeuvre
 var braquage_manoeuvre := 40.0    # degres de servo par rapport a 90 (max 45)
-var cap_evitement_deg := 40.0     # cap pris pour s'ecarter de la ligne
+var cap_evitement_deg := 40.0     # cap pris pour s'ecarter de la ligne (evitement hors ligne, sans verification)
+## Sur la ligne : caps essayes par choisir_cap, du plus doux au plus serre (90 = perpendiculaire a la ligne).
+var caps_evitement_candidats_deg := [40.0, 50.0, 60.0, 70.0, 80.0, 90.0]
+var marge_verification_mm := 20.0 # marge de la verification geometrique (comme ContournementFluide.marge_obstacle_mm)
+var pas_prevision_s := 0.02       # pas de la prevision (boucle du programme a 50 Hz)
 var cap_retour_deg := 45.0        # cap pris pour revenir vers la ligne (45 plutot que 30 : on reste moins loin de la ligne)
 var gain_cap := 1.0               # degres de roue par degre d'erreur de cap
 var gain_lateral := 0.005         # rad de cap par mm d'ecart lateral (phase LONGER)
@@ -98,8 +107,8 @@ var croisement_max_mm := 150.0       # ligne perdue depuis plus que ca en CROISE
 var n_sondes_travers := 3
 var rotation_travers_min_deg := 35.0 # avant, la ligne encore sous les sondes est celle que l'on vient de couper
 var rotation_travers_max_deg := 150.0
-# Dimensions (mm). Obstacle : ReglagesEpreuve (largeur + tolerance de centrage de chaque cote, profondeur).
-var largeur_voiture_mm := 141.0   # modele 3D (Vehicule.ENCOMBREMENT)
+# Dimensions (mm). Obstacle : ReglagesEpreuve, plus grande emprise possible (largeur + tolerance de centrage de chaque
+# cote, profondeur) : le bloc peut etre pose sur n'importe quelle face.
 var marge_laterale_mm := 40.0
 var marge_longitudinale_mm := 60.0
 
@@ -113,6 +122,7 @@ var _robot: ReglagesRobot
 var _odo: Odometrie
 var _epreuve: ReglagesEpreuve
 var _x_requis := 0.0              # decalage lateral vise (mm, positif du cote du contournement)
+var _cap_ecart_deg := 40.0        # cap de la phase ECART en cours (choisir_cap, sinon cap_evitement_deg)
 var _perdu := false               # l'ultrason a perdu l'obstacle pendant ECART
 var _d_vu := 0.0                  # derniere distance a laquelle l'obstacle a ete vu (mm)
 var _e_reprise := NAN             # ecart lu par les sondes quand le PID reprend directement la main (mm)
@@ -142,11 +152,11 @@ func _init(robot: ReglagesRobot, odo: Odometrie, epreuve: ReglagesEpreuve) -> vo
 
 ## Largeur a eviter (mm) : obstacle et tolerance de centrage des deux cotes.
 func _largeur_obstacle() -> float:
-	return _epreuve.largeur_obstacle_mm + 2.0 * _epreuve.tolerance_centrage_mm
+	return _epreuve.largeur_a_contourner_mm() + 2.0 * _epreuve.tolerance_centrage_mm
 
 ## Profondeur de l'obstacle dans le sens de la marche (mm).
 func _longueur_obstacle() -> float:
-	return _epreuve.profondeur_obstacle_mm
+	return _epreuve.profondeur_a_contourner_mm()
 
 ## d0_mm : distance de l'obstacle a l'arret. braquage_moyen : braquage moyen recent (servo - 90), pour le choix du cote.
 func demarrer(d0_mm: float, braquage_moyen: float) -> void:
@@ -156,13 +166,70 @@ func demarrer(d0_mm: float, braquage_moyen: float) -> void:
 		cote = 1 if braquage_moyen > 0.0 else -1
 	hors_ligne = false
 	_nouvel_obstacle(d0_mm)
-	_x_requis = _largeur_obstacle() / 2.0 + largeur_voiture_mm / 2.0 + marge_laterale_mm
+	_x_requis = _largeur_obstacle() / 2.0 + _robot.largeur_voiture_mm / 2.0 + marge_laterale_mm
 	termine = false
 	echec = false
 	_e_reprise = NAN
 	_zones = [Vector2(d0_mm + _robot.longueur_avant_mm, d0_mm + _robot.longueur_avant_mm + _longueur_obstacle())]
 	_centre = Vector2(0.0, d0_mm + _robot.longueur_avant_mm + _longueur_obstacle() / 2.0)
 	_n_echos = 0
+	_cap_ecart_deg = cap_evitement_deg
+
+## Sur la ligne, juste apres demarrer() : premier cap de caps_evitement_candidats_deg dont la manoeuvre prevue passe
+## sans toucher l'obstacle (centre sur la ligne, plus grande emprise, tolerance de centrage). false : aucun ne passe.
+func choisir_cap(d0_mm: float) -> bool:
+	for cap_deg in caps_evitement_candidats_deg:
+		if _manoeuvre_libre(float(cap_deg), d0_mm):
+			_cap_ecart_deg = cap_deg
+			return true
+	return false
+
+## Rejoue ECART, LONGER et le debut du RETOUR avec les memes lois que _phase_ecart, _phase_longer et _phase_retour
+## (cote droit ; le gauche est symetrique). Hypotheses : vitesse de manoeuvre des le depart (prudent : plus de chemin
+## pendant que le servo braque), obstacle perdu par l'ultrason des le debut d'ECART, servo a sa vitesse nominale.
+func _manoeuvre_libre(cap_deg: float, d0_mm: float) -> bool:
+	var demi := _largeur_obstacle() / 2.0 + marge_verification_mm
+	var face := d0_mm + _robot.longueur_avant_mm
+	var obs_min := Vector2(-demi, face - marge_verification_mm)
+	var obs_max := Vector2(demi, face + _longueur_obstacle() + marge_verification_mm)
+	var v := vitesse_manoeuvre * _robot.mm_s_par_cmd
+	var dt := pas_prevision_s
+	var p := Vector2.ZERO
+	var cap := 0.0
+	var servo := _odo.servo_estime
+	var etape := Phase.ECART
+	var t := 0.0
+	while t < 30.0:
+		var angle := 90.0
+		match etape:
+			Phase.ECART:
+				angle = _angle_cap(deg_to_rad(cap_deg), cap)
+				var duree := absf(90.0 - braquage_manoeuvre - servo) / _robot.vitesse_servo_deg_s \
+						if _robot.vitesse_servo_deg_s > 0.0 else 0.0
+				var anticipation := _rayon_virage_mm() * (1.0 - cos(cap)) + v * duree / 2.0 * absf(sin(cap))
+				if p.x >= _x_requis - anticipation:
+					etape = Phase.LONGER
+				elif p.x > decalage_max_mm:
+					return false
+			Phase.LONGER:
+				var corr := clampf((_x_requis - p.x) * gain_lateral,
+						-deg_to_rad(correction_laterale_max_deg), deg_to_rad(correction_laterale_max_deg))
+				angle = _angle_cap(corr, cap)
+				if p.y >= _y_fin:
+					etape = Phase.RETOUR
+			Phase.RETOUR:
+				angle = _angle_cap(-deg_to_rad(cap_retour_deg), cap)
+				if p.x <= 0.0 or p.y > obs_max.y + _robot.avant_voiture_mm() + _robot.arriere_voiture_mm:
+					return true            # la voiture est revenue sur la ligne, ou entierement apres l'obstacle
+		servo = angle if _robot.vitesse_servo_deg_s <= 0.0 else move_toward(servo, angle, _robot.vitesse_servo_deg_s * dt)
+		var delta := deg_to_rad(_robot.servo_vers_roues_deg(servo - 90.0))
+		cap += v / _robot.empattement_mm * tan(delta) * dt
+		p += Vector2(sin(cap), cos(cap)) * v * dt
+		if GeometrieVoiture.touche(p, cap, _robot.avant_voiture_mm(), _robot.arriere_voiture_mm,
+				_robot.largeur_voiture_mm / 2.0, obs_min, obs_max):
+			return false
+		t += dt
+	return false
 
 ## La voiture n'est pas sur la ligne : on contourne l'obstacle du cote demande (ECART, LONGER), puis on rend la main.
 ## Toute ligne vue en LONGER (sauf la ligne deja parcourue) est reprise ; aucune recherche de ligne derriere l'obstacle, elle n'y passe pas forcement.
@@ -268,7 +335,7 @@ func calculer(somme: float, n: int, v_mm_s: float, d_mm: float, d_brut_mm := -1.
 # ----- Phases (chacune retourne l'angle servo et change `phase`, `termine` ou `echec` si besoin)
 
 func _phase_ecart(c: float, x: float, d_mm: float, v_mm_s: float) -> float:
-	var angle := _angle_vers_cap(c * deg_to_rad(cap_evitement_deg))
+	var angle := _angle_vers_cap(c * deg_to_rad(_cap_ecart_deg))
 	var vu := d_mm >= 0.0 and d_mm < distance_vue_mm
 	if vu:
 		_perdu = false
@@ -279,7 +346,7 @@ func _phase_ecart(c: float, x: float, d_mm: float, v_mm_s: float) -> float:
 		var cap_c := c * _odo.cap
 		var x_ultrason := x + _robot.longueur_avant_mm * sin(cap_c)
 		var bord := x_ultrason + _d_vu * sin(cap_c - deg_to_rad(_robot.demi_angle_ultrason_deg))
-		_x_requis = maxf(_x_requis, bord + largeur_voiture_mm / 2.0 + marge_laterale_mm)
+		_x_requis = maxf(_x_requis, bord + _robot.largeur_voiture_mm / 2.0 + marge_laterale_mm)
 	# le redressement ajoute encore R * (1 - cos(cap)) de decalage, plus le trajet pendant que le servo braque
 	var anticipation := _rayon_virage_mm() * (1.0 - cos(_odo.cap)) \
 			+ _retard_mm(90.0 - c * braquage_manoeuvre, v_mm_s) * absf(sin(_odo.cap))
@@ -424,7 +491,7 @@ func _nouvel_obstacle(d_mm: float) -> void:
 
 ## Obstacle devant pendant la manoeuvre : on s'ecarte encore, a partir d'ici.
 func _relancer_ecart(d_mm: float) -> void:
-	_x_requis = cote * _odo.x + _largeur_obstacle() / 2.0 + largeur_voiture_mm / 2.0 + marge_laterale_mm
+	_x_requis = cote * _odo.x + _largeur_obstacle() / 2.0 + _robot.largeur_voiture_mm / 2.0 + marge_laterale_mm
 	var y0 := _odo.y + d_mm + _robot.longueur_avant_mm
 	_zones.append(Vector2(y0, y0 + _longueur_obstacle()))
 	_nouvel_obstacle(d_mm)
@@ -443,7 +510,7 @@ func _echo_connu(d_mm: float) -> bool:
 	var portee := _robot.longueur_avant_mm + d_mm
 	var y_echo := _odo.y + portee * cos(_odo.cap)
 	var x_echo := cote * (_odo.x + portee * sin(_odo.cap))     # positif du cote du contournement
-	var bord := _x_requis - largeur_voiture_mm / 2.0 - marge_laterale_mm
+	var bord := _x_requis - _robot.largeur_voiture_mm / 2.0 - marge_laterale_mm
 	if x_echo > bord + tolerance_memoire_mm:
 		return false
 	for z in _zones:
@@ -476,7 +543,11 @@ func _reperer_ligne(erreur_mm: float) -> void:
 
 ## Angle servo pour rejoindre le cap voulu (rad), braquage limite a braquage_manoeuvre.
 func _angle_vers_cap(cap_voulu: float) -> float:
-	var servo := _robot.roues_vers_servo(rad_to_deg(cap_voulu - _odo.cap) * gain_cap)
+	return _angle_cap(cap_voulu, _odo.cap)
+
+## Meme loi pour un cap donne (prevision de _manoeuvre_libre).
+func _angle_cap(cap_voulu: float, cap: float) -> float:
+	var servo := _robot.roues_vers_servo(rad_to_deg(cap_voulu - cap) * gain_cap)
 	return 90.0 + clampf(servo, -braquage_manoeuvre, braquage_manoeuvre)
 
 ## Cap (rad, en valeur absolue) que la voiture prendra encore pendant que le servo revient a 90.

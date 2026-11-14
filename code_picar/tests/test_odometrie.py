@@ -59,4 +59,5 @@ def test_odometrie_de_manoeuvre_pas_a_pas(chemin):
         assert any(all(proches(a, b) for a, b in zip(r, attendu)) for r in resultats), \
             "tour %d (%s) : godot %r python %r" % (i, tour["etat"], attendu, resultats)
         n += 1
-    assert n > 0 or "virage_serre" in chemin or "parcours_fourni" in chemin
+    # Traces sans manoeuvre odometrique (suivi, rattrapage ou RETROUVER seulement) : rien a comparer.
+    assert n > 0 or any(nom in chemin for nom in ("virage_serre", "parcours_fourni", "epingle_180_retrouver"))

@@ -7,3 +7,8 @@ addons/godot_mcp/
 
 # Fichiers temporaires de Godot
 *.tmp
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -28,14 +28,15 @@ Tant que ces valeurs sont provisoires, la simulation ne prédit pas le robot : e
 
 ## Géométrie
 
-| Valeur | Actuelle (provisoire) | Clé de `reglages_robot.json` | Tâche | Statut |
+| Valeur | Actuelle | Clé de `reglages_robot.json` | Tâche | Statut |
 | --- | --- | --- | --- | --- |
-| Essieu arrière → face de l'ultrason | 193 mm (modèle 3D) | `essieu_ultrason_mm` | #49 | À mesurer |
-| Essieu arrière → barre de sondes | 217 mm (modèle 3D) | `essieu_sondes_mm` | #49 | À mesurer |
-| Face de l'ultrason → avant du robot | 36 mm (modèle 3D). **Écart** : `config.py` (branche `main`) `ULTRASONIC_OFFSET = 35.3` | `ultrason_avant_mm` | #20 | À mesurer |
-| Dépassement derrière l'essieu arrière | 45 mm (LISEZMOI Blender). **Écart** : la boîte d'encombrement donne 56 mm (285 − 229) | `arriere_voiture_mm` | #49 | À mesurer |
-| Hauteur de l'ultrason au-dessus du sol | 60 mm (LISEZMOI Blender, mesure à la règle) ; cône supposé circulaire (même demi-angle en hauteur) : un bloc couché de 50 mm est vu. **Écho du sol non simulé** | `hauteur_ultrason_mm` (vérifiée contre `Capteur_Ultrason` du modèle 3D) | #49, #53 | À mesurer (hauteur, cône vertical, écho du sol) |
-| Empattement, roues, encombrement | 138 mm ; roue de 65 mm (205 mm par tour) ; 285 × 141 × 80 mm | `empattement_mm`, `rayon_roue_mm`, `longueur_mm`, `largeur_mm`, `hauteur_mm`, `centre_encombrement_y_mm`, `centre_encombrement_z_mm` | #49 | À vérifier |
+| Essieu arrière → face de l'ultrason | 193 mm | `essieu_ultrason_mm` | #49 | Mesuré (modèle Blender) |
+| Essieu arrière → barre de sondes | 217 mm | `essieu_sondes_mm` | #49 | Mesuré (modèle Blender) |
+| Écart entre sondes voisines, hauteur du dessous de la barre | 19 mm ; 15 mm (lus par aucun code pour l'instant, prévus pour le Python) | `ecart_sondes_mm`, `hauteur_sondes_mm` | #52 | Mesuré (modèle Blender) |
+| Face de l'ultrason → avant du robot | 36 mm. **Écart** : `config.py` (branche `main`) `ULTRASONIC_OFFSET = 35.3` | `ultrason_avant_mm` | #20 | Mesuré (modèle Blender) |
+| Dépassement derrière l'essieu arrière | 56 mm : arrière des moteurs dans `picar.glb` (la plaque du bas s'arrête à 45 mm). Choix de Mehdi du 14 nov. | `arriere_voiture_mm` | #49 | Mesuré (modèle Blender) |
+| Hauteur de l'ultrason au-dessus du sol | 60 mm (LISEZMOI Blender, mesure à la règle) ; cône supposé circulaire (même demi-angle en hauteur) : un bloc couché de 50 mm est vu. **Écho du sol non simulé** | `hauteur_ultrason_mm` (vérifiée contre `Capteur_Ultrason` du modèle 3D) | #49, #53 | Mesuré (modèle Blender) |
+| Empattement, roues, encombrement | 138 mm ; roue de 65 mm (205 mm par tour) ; 285 × 141 × 80 mm | `empattement_mm`, `rayon_roue_mm`, `longueur_mm`, `largeur_mm`, `hauteur_mm`, `centre_encombrement_y_mm`, `centre_encombrement_z_mm` | #49 | Mesuré (modèle Blender) |
 
 Les positions des sondes et de l'ultrason sont aussi dessinées dans le modèle 3D (`picar.glb`). Au démarrage, la simulation signale tout écart de plus de 5 mm entre le fichier et le modèle : après une mesure, mettre aussi le modèle Blender à jour (#55).
 
@@ -43,7 +44,7 @@ Les positions des sondes et de l'ultrason sont aussi dessinées dans le modèle 
 
 | Valeur | Actuelle (provisoire) | Clé de `reglages_robot.json` | Tâche | Statut |
 | --- | --- | --- | --- | --- |
-| Cône de l'ultrason | 15° au total (manuel : 30 à 40°, p. 34 ; environ 30°, p. 60) | `demi_angle_ultrason_deg` (7,5) | #53 | À mesurer |
+| Cône de l'ultrason | 30° au total, choix de Mehdi du 14 nov. (manuel : environ 30°, p. 60 ; 30 à 40°, p. 34 ; avant : 15°) | `demi_angle_ultrason_deg` (15) | #53 | À mesurer |
 | Bruit de l'ultrason | 2,5 mm (écart type ; TEX « Filtre tes connaissances », 10 nov., tableau 1 : 2,4 / 2,5 / 2,7 mm à 100 / 300 / 600 mm). Modèle idéal : 0 | `bruit_ultrason_mm` (remplace `bruit_ultrason_cm`) | #53 | Mesuré (9 nov.) |
 | Valeurs aberrantes de l'ultrason | 1 % des mesures, écart de 10 à 19 mm de signe aléatoire (amplitude uniforme ; Analyse_filtres_ultrason_E05.md, 9 nov.). Modèle idéal : aucune | `proba_aberrante_ultrason` (0,01), `aberrante_ultrason_mm` ([10, 19]) | #53 | Mesuré (9 nov.) |
 | Biais de l'ultrason | mesure = 0,971 × distance réelle (depuis la face du capteur) + 8,3 mm (TEX section 6.5 : 0,971 d + 7,3 mm à l'avant ; décalage capteur–avant 35,3 mm). Modèle idéal : gain 1, biais 0. Depuis l'étape 10 (14 nov.), le contrôleur inverse cette loi : d = (z − biais) / gain (`ReglagesRobot.corriger_ultrason_cm`) ; le robot réel utilisera la droite du 19 nov. | `gain_ultrason` (0,971), `biais_ultrason_mm` (8,3) | #23 | Provisoire (étalonnage du 19 nov. à venir) |
@@ -60,7 +61,7 @@ Les positions des sondes et de l'ultrason sont aussi dessinées dans le modèle 
 | Valeur | Actuelle (provisoire) | Clé de `reglages_robot.json` | Tâche | Statut |
 | --- | --- | --- | --- | --- |
 | Masse de la bille | 10 g | `masse_bille_kg` | #50 | À mesurer |
-| Rayon de la bille | 7,5 mm. **Le plan `support_bille_v2` ne le donne pas** (bille fournie dans la boîte) | `rayon_bille_mm` | #50 | À mesurer |
+| Rayon de la bille | 7,5 mm (Ø 15 mesuré à la règle, LISEZMOI Blender) | `rayon_bille_mm` | #50 | Mesuré |
 | Pertes de la bille (roulement) | 1 /s | `amortissement_bille_1_s` | #47 | À comparer au vrai robot |
 | Cuvette | rayon de courbure 140 mm, bord à 20 mm (plan `support_bille_v2` : R140, Ø40, unités non écrites) ; fréquence propre calculée ≈ 1,2 Hz | `rayon_cuvette_mm`, `rayon_bord_cuvette_mm` | #47 | À vérifier sur la pièce |
 | Fréquence de la boucle du programme sur le Pi | 50 Hz | `frequence_controle_hz` | #64 | À mesurer |

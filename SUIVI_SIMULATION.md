@@ -33,8 +33,8 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 **1. Mesurer le robot réel (prérequis à tout le reste)**
 - [ ] Vitesse réelle par commande (table commande → mm/s, avant et arrière) et zone morte des moteurs. Premières mesures : 50 / 113 / 256 mm/s aux commandes 20 / 30 / 50, zone morte ≈ 13 (section 3).
 - [ ] Angle de braquage maximal réel et vitesse du servo (simulation : 45° de roue, 300 °/s provisoire).
-- [ ] Positions réelles de l'ultrason (193 mm) et des sondes (217 mm) par rapport à l'essieu arrière : « à confirmer à la règle » (`reglages_robot.gd`).
-- [ ] Ultrason : bruit, retard de mesure (≈ 0,3 s observé), cône, calibration (z = 0,971 d + 7,3 du rapport).
+- [x] Positions de l'ultrason (193 mm) et des sondes (217 mm) et encombrement : concordent avec le modèle Blender (mesures à la règle, référence ; revue de l'étape 1, 14 nov.). Arrière du robot passé de 45 à 56 mm (arrière des moteurs, #49) ; statuts « mesuré » dans le JSON ; écart et hauteur des sondes ajoutés.
+- [ ] Ultrason : bruit, retard de mesure (≈ 0,3 s observé), cône (30° du manuel depuis le 14 nov., à mesurer), calibration (z = 0,971 d + 7,3 du rapport).
 - [ ] Fréquence réelle de la boucle sur le Raspberry Pi (simulation : 50 Hz).
 - [ ] Masse de la bille et du robot, comportement de la bille dans la cuvette (amortissement provisoire).
 

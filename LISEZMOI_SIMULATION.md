@@ -716,3 +716,13 @@ Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_rec
 **Valeur : hypothèse (14 nov., Mehdi), sans mesure.** Elle doit dépasser `absence_proche_s` (1,0 s : le filtre garde un obstacle à moins de 60 mm jusqu'à 1 s sans écho ; un délai plus court couperait une manœuvre normale sur un écho perdu) ; 2 s de plus pour un obstacle passager (une main). À vérifier sur le robot (`MESURES_ROBOT.md`, #64).
 
 **Vérification :** les 8 bancs redonnent les CSV de `essais/` (aucun n'atteint ce cas) ; `code_picar/tests/test_arret_urgence.py` rejoue des entrées enregistrées par Godot (`tests/outils/sonde_arret_urgence.gd`) : états et sorties identiques ; la manœuvre se termine entre 3,0 s et 3,0 s + un tour après le début de l'arrêt continu (BLOQUE en contournement fluide, RETROUVER en contournement par phases) ; un arrêt de 2,9 s suivi d'un écho lointain ne la termine pas. Le même changement est dans `code_picar/fastdrink/conduite/controleur.py`.
+
+## Revue des dimensions : arrière à 56 mm, sources, cône de 30° (14 novembre, #49, #52, #53)
+
+**Ce qui change :** `arriere_voiture_mm` passe de 45 à 56 mm dans `reglages_robot.json`. 45 mm était l'arrière de la plaque du bas (métadonnée `depasse_ar` de `picar.glb`), mais les moteurs dépassent jusqu'à 56 mm derrière l'essieu arrière dans le modèle Blender, qui fait foi (mesures à la règle). La boîte de collision utilisait déjà 56 mm ; les algorithmes de contournement (`contournement_fluide.gd`, `contournement.gd`) prennent maintenant la même valeur. Statut : mesuré. Le même JSON est lu par `code_picar/`.
+
+**Sources (même jour) :** dans `reglages_robot.json`, les 11 cotes de géométrie et le rayon de la bille passent au statut « mesuré » (mesures à la règle reportées dans le modèle Blender, référence choisie par Mehdi) ; aucune valeur ne change. Deux clés ajoutées, lues par aucun code pour l'instant (prévues pour le Python) : `ecart_sondes_mm` (19) et `hauteur_sondes_mm` (15), jusqu'ici seulement dans `picar.glb`.
+
+**Cône de l'ultrason (même jour) :** `demi_angle_ultrason_deg` passe de 7,5 à 15 (30° au total, manuel PiCar-S p. 60 ; choix de Mehdi en attendant la mesure, #53). La valeur sert au modèle du capteur et aux algorithmes (`controleur.gd`, `contournement.gd`).
+
+**Vérification :** banc de 5 pistes (réaliste et idéal, avec l'arrière à 56 mm seul) : 5 sur 5 OK. Avec les deux changements : banc de 5 pistes réaliste 5 sur 5 OK ; 25 scénarios fixes 25 sur 25 OK. Comparé à `essais/scenarios_reference_realiste.csv`, mêmes manœuvres ; l'erreur d'arrêt maximale monte jusqu'à 6,9 mm (`obstacle_apres_virage`, contre 1,3), toujours sous la tolérance de 30 mm ; bille au plus 0,87. Banc complet de 40 pistes à faire en fin d'étape.

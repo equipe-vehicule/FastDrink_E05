@@ -800,3 +800,31 @@ Revue complète : `Claude outputs/REVUE_04_MARCHE_ARRIERE_2026-11-14.md` (loi du
 **Vérification :** syntaxe de `recul_ligne.gd`, `banc_essai.gd` et `simulation.gd` sans erreur. Banc complet unique (8 références, mêmes commandes que l'étape 3) : **0 ligne changée** sur les colonnes existantes, partout ; verdicts inchangés (40/40, 39/40, 40/40, 39/40, 15/15, 15/15, 25/25, 25/25). Références régénérées (seules les 2 colonnes s'ajoutent) ; les anciennes sont gardées avec le suffixe `_avant_revue04`.
 
 **Constat de la nouvelle mesure :** le recul de travers n'est pas limité aux virages à 90° des scénarios. Sur 40 pistes en grille (réaliste, 27 pistes avec obstacles), écart des sondes en fin de recul : médiane 17,0 mm, 90e centile 24,4 mm, max 36,9 mm ; essieu : médiane 15,7 mm, max 38,9 mm. Pistes libres (réaliste) : sondes médiane 16,6 mm, max 39,4 mm ; essieu max 44,1 mm. Le ruban fait 18 mm (bord à 9 mm de l'axe) : souvent, une seule sonde voit encore la ligne. Aucune collision ni chute de bille liée (bille ≤ 0,73 sur la grille). Cause probable, vérifiée seulement sur `obstacle_apres_virage` : la voiture s'arrête de travers devant l'obstacle (sortie de virage proche, suivi qui oscille), et la loi prend ce cap de départ pour la direction de la ligne. À traiter à l'étape 5 (le contournement part de cette position), pas dans la loi de recul.
+
+## Revue du contournement (14 novembre, étape 5)
+
+Revue complète : `Claude outputs/REVUE_05_CONTOURNEMENT_2026-11-14.md` (logique du fluide et des phases, tableau des réglages et de leurs sources, essais ciblés, analyse de la graine libre 269247). Exigences : guide, section 1 (contourner l'obstacle en quittant la ligne, bille sans chute) ; professeur, 12 et 13 nov. (obstacle de 100 × 150 × 50 mm sur n'importe quelle face, centré, en ligne droite). Décisions de Mehdi : P1 et P3 acceptées ; P2 (repli par phases parti de la vraie pose), P4 (écho persistant) et P5 (`marge_obstacle_mm`) non retenues.
+
+**Ce qui change :**
+- `contournement_fluide.gd` et `reglages_algorithmes.json` (P1) : `fluide:reprise_avant_fin_mm` 225 → **260** (hypothèse, essayée sur 2 graines). Les sondes voient la ligne dès y3 − 290 mm environ ; à 225, sur la graine libre 269247 (réaliste), la voiture avait déjà croisé la ligne avant que la reprise s'ouvre et finissait sans ligne. 300 corrigeait 269247, mais la bille de la graine 7920 (réaliste) montait de 0,61 à 0,87 (reprise alors que la voiture est encore inclinée) ; 260 : 0,63, et 269247 passe.
+- `contournement_fluide.gd` (P1) : en fin sans ligne, le côté où chercher la ligne vient du dernier écart vu par les sondes pendant le retour, s'il y en a un, et non plus de l'odométrie seule (269247 : x = −4,6 mm prévu, 53 mm réels de l'autre côté).
+- `banc_essai.gd` (P3, mesure seulement) : cinq colonnes à la fin du CSV : `marge_obstacle_etat` et `marge_obstacle_t_s` (état, phase et instant de la marge minimale), `retour_ligne_max_s` et `retour_ligne_max_mm` (temps et distance du début d'un contournement au retour stable sur la ligne, maximum sur la piste) et `contournements_sans_retour`. Retour stable = SUIVI avec les sondes sur la ligne pendant 0,5 s de suite (`RETOUR_STABLE_S`, hypothèse de mesure). La ligne de la console ne change pas.
+
+**Vérification :** syntaxe sans erreur ; essais ciblés (5 scénarios, idéal et réaliste ; graines 269247, 95029, 7920). Banc complet (8 références, mêmes commandes que l'étape 3) fait avec 300, puis refait avec 260. Avec 300 : mêmes verdicts et 0 collision, mais bille 0,87 sur 7920 (réaliste) et marge min des pistes libres réalistes 20,3 mm ; d'où 260. Références régénérées ; les anciennes sont gardées avec le suffixe `_avant_revue05`.
+
+| Banc | Verdicts avant → après | Coll. | Bille max | Marge min (mm) | Retour sur la ligne max |
+| --- | --- | --- | --- | --- | --- |
+| Idéal, 40 pistes | 40/40 → 40/40 | 0 | 0,80 → 0,85 (7920) | 26,4 → 26,4 | 4,72 s / 981 mm |
+| Idéal, D_recul 50 | 15/15 → 15/15 | 0 | 0,66 → 0,66 | 27,7 → 27,7 | 15,33 s / 1391 mm |
+| Idéal, pistes libres | 39/40 → 40/40 | 0 | 0,94 → 0,94 | 23,0 → 23,7 | 5,02 s / 986 mm |
+| Idéal, 25 scénarios | 25/25 → 25/25 | 0 | 0,80 → 0,84 | 34,1 → 34,1 | 12,54 s / 1232 mm |
+| Réaliste, 40 pistes | 40/40 → 40/40 | 0 | 0,81 → 0,81 | 30,5 → 30,5 | 4,84 s / 990 mm |
+| Réaliste, D_recul 50 | 15/15 → 15/15 | 0 | 0,72 → 0,72 | 29,3 → 29,3 | 15,02 s / 1378 mm |
+| Réaliste, pistes libres | 39/40 → 40/40 | 0 | 1,00 → 1,00 (39596) | 22,4 → 21,1 | 4,86 s / 995 mm |
+| Réaliste, 25 scénarios | 25/25 → 25/25 | 0 | 0,87 → 0,84 | 32,3 → 32,3 | 12,1 s / 1193 mm |
+
+Fins sans ligne du fluide : 1 → 0 ; contournements sans retour sur la ligne : 0 partout. 269247 (réaliste) : bille tombée → OK, bille 0,60. 47515 (idéal) : BLOQUE → OK, mais après 11 rattrapages, dans une épingle plus serrée que la voiture (#75) : passe par chance, pas corrigé par cette revue.
+
+**Constats des nouvelles mesures :** la marge minimale est toujours en `CONTOURNEMENT_FLUIDE SORTIE` (fluide) ou `CONTOURNEMENT ECART` (phases, D_recul 50) ; 95029 (réaliste, D_recul 50) : 29,3 mm en ECART à 43,32 s, au 2e contournement par phases, parti avec l'essieu à 19,9 mm de la ligne (lien avec P2, non retenue). Retour sur la ligne : médiane 4,7 à 4,8 s (environ 0,95 m) en fluide, 12 s par phases.
+
+**Reste ouvert :** la bille est sensible au moment de la reprise. En moyenne elle baisse sur chaque banc (−0,02 à −0,05), mais quelques cas montent par effet de seuil : 7920 (idéal) 0,56 → 0,85, 79191 (réaliste) 0,56 → 0,76, 205895 (libre) 0,71 → 0,78. Entre 260 et 280, la bille de 7920 (réaliste) passe de 0,63 à 0,85. Piste : reprendre la ligne en douceur après le S (à l'étape de la récupération de la ligne).

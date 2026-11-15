@@ -41,9 +41,13 @@ extends RefCounted
 ## graine 110867 : 42,9 mm prevus, 10,6 mm reels). Essai non retenu par l'equipe, anticipation a 100 mm : marges min 20,3 mm (D_recul 50) et 28,1 mm (40 pistes) au lieu de 10,6 et 20,0, mais bille plus
 ## haute en ideal (pire_cas_avant_virage 0,64 -> 0,86) et oscillation en droite 3,6 -> 8,6 deg.
 @export var anticipation_mm: float
-@export var reprise_avant_fin_mm: float # le PID reprend des que les sondes voient la ligne dans la 2e moitie du retour.
+@export var reprise_avant_fin_mm: float # le PID reprend des que les sondes voient la ligne a moins de cette distance de la fin du retour.
 								   # 0 (attendre la fin) : sur une piste aleatoire, la ligne tournait avant la fin du retour
-								   # et etait perdue ; 225 teste sans chute de bille (pistes 4 et 7)
+								   # et etait perdue ; 225 teste sans chute de bille (pistes 4 et 7). 260 (revue 05, 14 nov., Mehdi) :
+								   # la ligne est vue des y3 - 290 environ ; a 225, graine libre 269247 (realiste), la voiture
+								   # l'avait deja croisee avant l'ouverture de la reprise et finissait sans ligne.
+								   # 300 corrige 269247 mais la bille de la graine 7920 (realiste) monte de 0,61 a 0,87 (reprise
+								   # encore inclinee) ; 260 : 0,63 et 269247 OK. Essaye sur ces 2 graines seulement (hypothese).
 ## Vitesse : la plus grande qui garde l'acceleration laterale v^2 / R sous acceleration_laterale_max, plafonnee.
 ## 0,3 m/s^2 : sous la deceleration de freinage utilisee en ligne droite (500 mm/s^2, soit 0,5 m/s^2), car la bille subit
 ## aussi les a-coups du braquage.
@@ -54,6 +58,8 @@ var cote := 1
 var termine := false
 var fin_sans_ligne := false        # diagnostic : fin du retour sans avoir revu la ligne (cote devine)
 var e_reprise := 0.0
+var _e_vu_retour := 0.0            # dernier ecart vu par les sondes pendant le retour (mm)
+var _vue_retour := false           # les sondes ont vu la ligne pendant le retour
 var vitesse_mm_s := 260.0          # vitesse choisie pour la manoeuvre en cours (mm/s)
 var rayon_choisi_mm := 0.0         # journal / banc d'essai
 
@@ -101,6 +107,8 @@ func demarrer() -> void:
 	_odo.cap = _cap0
 	termine = false
 	fin_sans_ligne = false
+	_e_vu_retour = 0.0
+	_vue_retour = false
 
 func _preparer(d_capteur_mm: float, rayon_mm: float) -> void:
 	_ecart = ecart_mm()
@@ -181,6 +189,9 @@ func nom_phase() -> String:
 ## Retourne Vector2(angle servo, vitesse cible). Regarder `termine` ensuite.
 func calculer(somme: float, n: int) -> Vector2:
 	var y := _odo.y
+	if n > 0 and y >= _y2:
+		_e_vu_retour = somme / n
+		_vue_retour = true
 	if n > 0 and y >= _y3 - reprise_avant_fin_mm:
 		e_reprise = somme / n
 		termine = true
@@ -188,7 +199,11 @@ func calculer(somme: float, n: int) -> Vector2:
 	if y >= _y3 + 150.0:
 		# Ligne non revue : elle est du cote oppose a la position laterale de la voiture (x = 0 sur la ligne).
 		# Avant : toujours -cote, faux si la voiture a deja croise la ligne (elle braquait alors a fond du mauvais cote).
+		# Si les sondes ont vu la ligne pendant le retour (croisee trop tot), elle est du cote ou elles l'ont vue en
+		# dernier : plus sur que l'odometrie, qui derive (revue 05 : x = -4,6 mm prevu, 53 mm reels, graine 269247).
 		var signe := -signf(_odo.x) if absf(_odo.x) > 10.0 else float(-cote)
+		if _vue_retour and absf(_e_vu_retour) > 0.0:
+			signe = signf(_e_vu_retour)
 		e_reprise = signe * SuiviLigne.ERREUR_MAX_MM
 		fin_sans_ligne = true
 		termine = true

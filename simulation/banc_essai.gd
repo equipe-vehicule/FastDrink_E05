@@ -24,6 +24,14 @@ const COLONNES_SUIVI := ["pertes_ligne_ailleurs"]
 ## Colonnes de la revue 04 (marche arriere) : ecart maximal a l'axe du ruban, a la fin des reculs, du centre de la barre
 ## de sondes et du milieu de l'essieu arriere (vide = piste sans axe connu, ex. piste Blender, ou aucun recul).
 const COLONNES_RECUL := ["ecart_sondes_fin_recul_max_mm", "ecart_essieu_fin_recul_max_mm"]
+## Colonnes de la revue 05 (contournement) : etat (et phase) et instant de la marge obstacle minimale ; temps et distance
+## (parcourue dans le monde) entre le debut d'un contournement et le retour stable sur la ligne (SUIVI, ligne vue
+## RETOUR_STABLE_S de suite ; on compte jusqu'au debut de cette periode), maximum par cas ; contournements sans ce retour
+## (un autre contournement ou la fin du cas arrive avant).
+const COLONNES_CONTOURNEMENT := ["marge_obstacle_etat", "marge_obstacle_t_s", "retour_ligne_max_s", "retour_ligne_max_mm",
+		"contournements_sans_retour"]
+## HYPOTHESE (choix de mesure, pas une exigence) : ligne vue 0,5 s de suite = retour stable.
+const RETOUR_STABLE_S := 0.5
 const ETATS_CONTOURNEMENT := ["CONTOURNEMENT_FLUIDE", "CONTOURNEMENT"]
 ## Ligne perdue « apres un contournement » : l'episode commence moins de ca apres la fin du contournement.
 const FENETRE_APRES_CONTOURNEMENT_S := 3.0
@@ -73,6 +81,15 @@ var _pertes_ailleurs := 0
 var _fin_attendue := "ARRIVEE"    # resultat attendu (scenario « fin_attendue », ARRIVEE par defaut)
 var _distance_fin_ligne_mm := NAN  # mm, barre de sondes -> fin de la ligne a l'arret (NAN = non controlee)
 var _fins_sans_ligne := 0
+var _marge_obstacle_etat := ""    # etat (et phase) au moment de la marge obstacle minimale
+var _marge_obstacle_t := NAN      # s, instant de la marge obstacle minimale
+var _retour_debut_t := NAN        # s, debut du contournement dont on attend le retour sur la ligne (NAN = aucun)
+var _retour_debut_d := 0.0        # m, distance parcourue au debut de ce contournement
+var _vue_depuis_t := NAN          # s, debut de la periode ou la ligne est vue en SUIVI (NAN = pas vue)
+var _vue_depuis_d := 0.0          # m, distance parcourue au debut de cette periode
+var _retour_max_s := NAN
+var _retour_max_mm := NAN
+var _sans_retour := 0
 
 func demarrer() -> void:
 	DirAccess.make_dir_recursive_absolute(DOSSIER)
@@ -88,7 +105,7 @@ func demarrer() -> void:
 	# Ligne lue par les scripts d'essai pour retrouver le fichier de resultats (voulue, pas du debogage)
 	print("FICHIER %s" % ProjectSettings.globalize_path(nom))
 	var entete := ([] if scenarios.is_empty() else ["cas"]) + ENTETE + COLONNES_STABILITE + ["verdict", "raisons_echec"] \
-			+ COLONNES_OBSTACLES + COLONNES_SUIVI + COLONNES_RECUL
+			+ COLONNES_OBSTACLES + COLONNES_SUIVI + COLONNES_RECUL + COLONNES_CONTOURNEMENT
 	_fichier.store_csv_line(PackedStringArray(entete))
 	_i = 0
 	_ok = 0
@@ -125,6 +142,13 @@ func _reinitialiser() -> void:
 	_perte_ailleurs_max = 0.0
 	_pertes_ailleurs = 0
 	_fins_sans_ligne = 0
+	_marge_obstacle_etat = ""
+	_marge_obstacle_t = NAN
+	_retour_debut_t = NAN
+	_vue_depuis_t = NAN
+	_retour_max_s = NAN
+	_retour_max_mm = NAN
+	_sans_retour = 0
 	_stabilite.reinitialiser()
 
 ## Arret (entree en DECISION) : distance REELLE (verite terrain, vue de dessus) entre la boite d'encombrement de la
@@ -278,10 +302,43 @@ static func _en_droite(v: Vehicule, c: Controleur, g: GenerateurPiste) -> bool:
 
 ## Marge laterale : plus petite distance, vue de dessus, entre la boite d'encombrement de la voiture et chaque
 ## obstacle (0 = contact). Mesure de la simulation (verite terrain), pas du robot.
-func _mesurer_marge_obstacle(v: Vehicule) -> void:
+func _mesurer_marge_obstacle(temps: float, v: Vehicule, c: Controleur) -> void:
 	if obstacles.is_empty():
 		return
-	_marge_obstacle = minf(_marge_obstacle, _distance_obstacle_proche(v))
+	var d := _distance_obstacle_proche(v)
+	if d < _marge_obstacle:
+		_marge_obstacle = d
+		_marge_obstacle_t = temps
+		var etat := c.etat_court()
+		if etat == "CONTOURNEMENT":
+			etat += " " + c.contournement.nom_phase().get_slice(" ", 0)
+		elif etat == "CONTOURNEMENT_FLUIDE":
+			etat += " " + c.fluide.nom_phase()
+		_marge_obstacle_etat = etat
+
+## Retour sur la ligne apres chaque contournement : voir COLONNES_CONTOURNEMENT.
+func _mesurer_retour(temps: float, etat: String, v: Vehicule) -> void:
+	if etat in ETATS_CONTOURNEMENT and _etat_prec not in ETATS_CONTOURNEMENT:
+		if not is_nan(_retour_debut_t):
+			_sans_retour += 1
+		_retour_debut_t = temps
+		_retour_debut_d = v.distance_parcourue
+		_vue_depuis_t = NAN
+		return
+	if is_nan(_retour_debut_t) or etat in ETATS_CONTOURNEMENT:
+		return
+	if etat != "SUIVI" or not v.sondes.any(func(s): return s > 0):
+		_vue_depuis_t = NAN
+		return
+	if is_nan(_vue_depuis_t):
+		_vue_depuis_t = temps
+		_vue_depuis_d = v.distance_parcourue
+	if temps - _vue_depuis_t >= RETOUR_STABLE_S:
+		var duree := _vue_depuis_t - _retour_debut_t
+		var dist := (_vue_depuis_d - _retour_debut_d) * 1000.0
+		_retour_max_s = duree if is_nan(_retour_max_s) else maxf(_retour_max_s, duree)
+		_retour_max_mm = dist if is_nan(_retour_max_mm) else maxf(_retour_max_mm, dist)
+		_retour_debut_t = NAN
 
 ## Plus petite distance (m), vue de dessus, entre la boite d'encombrement de la voiture et les obstacles de la piste.
 func _distance_obstacle_proche(v: Vehicule) -> float:
@@ -333,10 +390,11 @@ func suivre(temps: float, dt: float, v: Vehicule, bille: BilleCuvette, c: Contro
 	if termine:
 		return false
 	_marge_max = maxf(_marge_max, bille.taux_bord())
-	_mesurer_marge_obstacle(v)
+	_mesurer_marge_obstacle(temps, v, c)
 	if temps > 0.1 and v.en_collision:
 		_collision = true
 	var etat := c.etat_court()
+	_mesurer_retour(temps, etat, v)
 	if etat != _etat_prec:
 		if _compteurs.has(etat):
 			_compteurs[etat] += 1
@@ -381,6 +439,13 @@ func suivre(temps: float, dt: float, v: Vehicule, bille: BilleCuvette, c: Contro
 	ligne.append(str(_pertes_ailleurs))
 	for e in [_ecart_sondes_recul, _ecart_essieu_recul]:
 		ligne.append("" if is_nan(e) else str(snapped(e, 0.1)))
+	if not is_nan(_retour_debut_t):
+		_sans_retour += 1
+	ligne.append(_marge_obstacle_etat)
+	ligne.append("" if is_nan(_marge_obstacle_t) else str(snapped(_marge_obstacle_t, 0.01)))
+	ligne.append("" if is_nan(_retour_max_s) else str(snapped(_retour_max_s, 0.01)))
+	ligne.append("" if is_nan(_retour_max_mm) else str(snapped(_retour_max_mm, 1.0)))
+	ligne.append(str(_sans_retour))
 	if _scenario != "":
 		ligne.insert(0, _scenario)
 	_fichier.store_csv_line(ligne)

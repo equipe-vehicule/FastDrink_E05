@@ -24,7 +24,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 
 **Étape 11 (portage Python) en cours.** Fait le 14 nov. : trace du contrôleur (`--trace`, sans effet sur les résultats), 6 traces de référence, socle Python (`code_picar/fastdrink/conduite/` : fonctions GDScript à l'identique, Vector2 en float32, réglages, odométrie, banc de rejeu) et plan en 3 lots (`code_picar/PORTAGE.md`). Décision : le robot utilise un port exact de `filtre_ultrason.gd` (`conduite/filtre_ultrason.py`) ; `fastdrink/filtres/` reste l'outil d'analyse du rapport (les trois écarts du filtre y sont reportés depuis le commit d16c792). Fait ensuite (commits 7b50eaa, 011d473) : contrôleur et 13 modules portés ; les 7 traces (dont une qui passe par RETROUVER) sont rejouées sans écart, 820 tests. Reste : brancher le pilote du robot (sondes 0/1, servo, moteurs, ultrason non bloquant, bornes de `dt` : contrat dans `code_picar/PORTAGE.md`, #31 à #34), mesurer le temps d'un tour sur le Pi, couvrir DEMI_TOUR par une trace. Fait le 14 nov. (après relecture du portage) : durée maximale de l'arrêt d'urgence en manœuvre, `arret_urgence_max_s` = 3,0 s (hypothèse, à vérifier sur le robot) ; au-delà, la manœuvre se termine comme au timeout de 10 s (RETROUVER ou BLOQUE) ; un faux écho persistant sous 40 mm ne la gèle plus. Test croisé Godot/Python : `code_picar/tests/test_arret_urgence.py`.
 
-**Restes ouverts (étape 10) :** fin de `DEMI_TOUR` en marche arrière (inversion immédiate possible, plus atteinte par aucun banc) ; graine libre réaliste 39596 : bille 1,00 avec verdict OK (rattrapage puis réaccélération, existait avant) ; graine 269247 : bille 0,97, et **bille tombée depuis la revue 03** (contournement fini sans ligne, puis rattrapage) ; graine 47515 en idéal : BLOQUE.
+**Restes ouverts (étape 10) :** fin de `DEMI_TOUR` en marche arrière (inversion immédiate possible, plus atteinte par aucun banc) ; graine libre réaliste 39596 : bille 1,00 avec verdict OK (rattrapage puis réaccélération, existait avant) ; graine 269247 : bille tombée depuis la revue 03, **résolue par la revue 05** (bille 0,60) ; graine 47515 en idéal : passe depuis la revue 05, mais après 11 rattrapages (épingle plus serrée que la voiture, non corrigée).
 
 **Ce que la simulation ne garantit pas encore :** les valeurs du modèle réaliste viennent du rapport des filtres (3 vitesses moyennes, ultrason à l'arrêt) ; zone morte, temps de réponse, servo et dimensions ne sont pas mesurés. Avant l'étape 9, elle était idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
 
@@ -38,6 +38,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 - [ ] Ultrason : bruit, retard de mesure (≈ 0,3 s observé), cône (30° du manuel depuis le 14 nov., à mesurer), calibration (z = 0,971 d + 7,3 du rapport).
 - [x] Ultrason et arrêt revus (revue de l'étape 3, 14 nov.) : recul de correction réparé (il n'avait jamais lieu), cône rempli par 113 rayons au lieu de 5 ; erreur d'arrêt max du banc réaliste de 40 pistes 21,9 → 7,5 mm. Les 8 références de `essais/` sont régénérées ; nouvel échec : graine libre réaliste 269247, bille tombée après un contournement fini sans ligne (étapes contournement et récupération). À mesurer (#53) : bloc couché de 50 mm vu ou non par le capteur à 60 mm du sol.
 - [x] Marche arrière revue (revue de l'étape 4, 14 nov.) : distance respectée partout (150,0 à 150,6 mm ; exacte en simulation par construction, sur le robot elle dépend de la table de vitesse en arrière, #18) ; plancher de la loi dans `reglages_algorithmes.json` ; banc : écart à la ligne en fin de recul (2 colonnes). Constat : médiane 17 mm aux sondes, max 39 mm (voiture arrêtée de travers) ; correction de la loi essayée et rejetée (les sondes perdent la ligne). À reprendre à l'étape 5 : le contournement part de cette position. Résultats des 8 références inchangés.
+- [x] Contournement revu (revue de l'étape 5, 14 nov.) : reprise de la ligne en fin de fluide plus tôt (`reprise_avant_fin_mm` 225 → 260, hypothèse) et côté de recherche tiré des sondes ; banc : état et instant de la marge minimale, temps et distance de retour sur la ligne. 8 bancs OK, 0 collision, 0 fin sans ligne ; 269247 résolue. Reste : bille sensible au moment de la reprise (7920 en idéal 0,56 → 0,85). Détail : `LISEZMOI_SIMULATION.md`, étape 5. **Python à reporter** : `code_picar/fastdrink/conduite/contournement_fluide.py` n'a pas le côté de recherche tiré des sondes (P1) ; la valeur 260 y arrive par le JSON (portage en pause).
 - [ ] Fréquence réelle de la boucle sur le Raspberry Pi (simulation : 50 Hz).
 - [ ] Masse de la bille et du robot, comportement de la bille dans la cuvette (amortissement provisoire).
 
@@ -52,7 +53,7 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 **3. Algorithmes encore fragiles**
 - [x] Contournement par phases : trajectoire vérifiée avant de partir (cap de 40 à 90°), arrêt sûr en ARRET si rien ne passe (#72, étape 6). D_recul 50 : 15/15, 0 collision.
 - [ ] Contournement fluide : marges min 1,1 mm (D_recul 50, graine 95029) et 7,9 mm (pistes libres). Essai `marge_obstacle_mm` 40 : marges ≥ 25,7 mm mais le fluide n'est plus choisi, temps +13 à +29 % ; décision à prendre.
-- [x] Obstacle juste avant un virage plus serré que la voiture (#75, graine 47515) : `garder_cote` et 4 tentatives (hypothèse) ; passe en réaliste, reste BLOQUE en idéal.
+- [x] Obstacle juste avant un virage plus serré que la voiture (#75, graine 47515) : `garder_cote` et 4 tentatives (hypothèse) ; passe en réaliste ; en idéal, passe depuis la revue 05 mais après 11 rattrapages (non corrigé).
 - [ ] Bille à 0,94 sur les pistes libres (0,80 sur la grille) : à analyser.
 - [x] (#76, étape 10 : marge prévue ≈ réelle à 3 à 6 mm près ; `marge_obstacle_mm` 20 = hypothèse) Marge latérale du contournement fluide : 14 mm au pire (bloc de 150 de large décalé de 10 mm) pour 40 mm prévus ; `marge_laterale_mm` à revoir après les mesures du robot.
 - [ ] Ligne droite après l'obstacle (`droite_apres_min` = 0,60 m, hypothèse) : le retour du contournement du pire cas finit environ 0,68 m après l'arrière d'un bloc de 50 de profondeur (perte de ligne de 0,6 s dans `obstacle_avant_virage`) ; à confirmer avec le professeur (#56).
@@ -247,7 +248,22 @@ Le plan de la section 8 est appliqué ; le détail des fichiers est dans `LISEZM
 - « Parcours fourni » (sans obstacle) : 4 pertes de ligne d'environ 0,6 s dans les virages serrés, rattrapées. Suivi de ligne, pas lié aux obstacles : à traiter à part.
 - Modèle idéal (pas de bruit sur l'ultrason ni l'odométrie) : à recalibrer sur le robot.
 
-### Derniers résultats : bancs de l'étape 10 (14 novembre)
+### Derniers résultats : revue du contournement (étape 5, 14 novembre)
+
+Références de `essais/` régénérées (anciennes : suffixe `_avant_revue05`). Erreur d'arrêt mesurée comme à l'étape 10.
+
+| Banc | Verdicts | Coll. | Bille max | Err. arrêt max (mm) | Marge min (mm) | Temps (s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Idéal, 40 pistes | 40/40 | 0 | 0,85 (7920) | 11,3 | 26,4 | 2646 |
+| Idéal, D_recul 50 | 15/15 | 0 | 0,66 | 15,0 | 27,7 | 947 |
+| Idéal, pistes libres | 40/40 (47515 après 11 rattrapages) | 0 | 0,94 | 10,1 | 23,7 | 3215 |
+| Idéal, 25 scénarios | 25/25 | 0 | 0,84 | 8,3 | 34,1 | 492 |
+| Réaliste, 40 pistes | 40/40 | 0 | 0,81 | 8,6 | 30,5 | 2649 |
+| Réaliste, D_recul 50 | 15/15 | 0 | 0,72 | 14,2 | 29,3 | 946 |
+| Réaliste, pistes libres | 40/40 | 0 | 1,00 (39596) | 9,7 | 21,1 | 3218 |
+| Réaliste, 25 scénarios | 25/25 | 0 | 0,84 | 6,3 | 32,3 | 491 |
+
+### Derniers résultats : bancs de l'étape 10 (14 novembre) (historique)
 
 Références de `essais/` remplacées. Erreur d'arrêt = écart réel le plus court voiture-obstacle (autre mesure qu'avant : ne pas comparer aux tableaux ci-dessus).
 

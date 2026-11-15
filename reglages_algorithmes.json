@@ -101,7 +101,7 @@
 		"marge_arriere_mm": 40.0,
 		"longueur_retour_mm": 450.0,
 		"anticipation_mm": 150.0,
-		"reprise_avant_fin_mm": 225.0,
+		"reprise_avant_fin_mm": 260.0,
 		"acceleration_laterale_max": 0.3,
 		"vitesse_max_mm_s": 260.0
 	},

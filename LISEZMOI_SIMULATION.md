@@ -684,7 +684,7 @@ Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge m
 - Fin de `DEMI_TOUR` en marche arrière : inversion immédiate possible, plus atteinte par aucun banc.
 - Pistes libres, réaliste, graine 39596 : bille 1,00 avec verdict OK (rattrapage puis réaccélération ; existait avant).
 - Graine 269247 : bille 0,97.
-- Pistes libres, réaliste, graine 205895 : erreur d'arrêt 24,7 mm, cause non analysée.
+- ~~Pistes libres, réaliste, graine 205895 : erreur d'arrêt 24,7 mm~~ : 3,1 mm depuis l'étape 1 (revue 03, 14 nov.).
 - Graine 47515 en idéal : BLOQUE.
 - Étape 11 : trois écarts du filtre reportés dans `code_picar/fastdrink/filtres/mediane_kalman.py` et `config.py` (commit d16c792).
 
@@ -748,3 +748,26 @@ Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_rec
 | Réaliste, scénarios (`scenarios_reference_realiste.csv`) | 16/25 | 25/25 | 6,9 (4,4) | 27,0 (32,3) | 0,87 (0,86) |
 
 **À revoir (étape du contournement) :** en réaliste avec D_recul 50, deux contournements par phases passent beaucoup plus près de l'obstacle : graine 95029, 10,6 mm contre 50,5 ; graine 15839, 16,4 contre 33,0. Il n'y a pas de collision. Cause probable : l'arrière à 56 mm utilisé par les algorithmes de contournement ; non vérifié.
+
+## Revue de l'ultrason et de l'arrêt (14 novembre, étape 3)
+
+Revue complète : `Claude outputs/REVUE_03_ULTRASON_ARRET_2026-11-14.md` (chaîne mesure → biais → filtre → arrêt, tableau des réglages et de leurs sources, idéal contre réaliste). Décisions de Mehdi : P1, P2 et P4 acceptées ; P3 (vitesse initiale du Kalman par l'odométrie) non appliquée : elle n'était prévue que si l'erreur restait au-dessus de 10 mm (max 7,5 mm après P1 et P2) ; P5 (mesure d'un bloc couché sur le vrai robot) à faire avec l'étalonnage du 19 nov. (#53).
+
+**Ce qui change :**
+- `arret_obstacle.gd` (P1, bogue) : quand la voiture s'est arrêtée plus de `seuil_recul_mm` trop près, `limiter` passait en recul mais `arrete` restait vrai ; le contrôleur voyait « arrêtée et immobile » et passait en DECISION au même tour. Le recul de correction n'avait donc jamais lieu (graine 39596 : arrêt à ≈ 79 mm au lieu de 100). `arrete` est remis à faux au début du recul.
+- `vehicule.gd` (P2) : le cône de l'ultrason n'avait que 5 rayons (axe, ± 15° en largeur et en hauteur). Un obstacle de 50 mm de large passait entre deux rayons (échos perdus, graine 39596) et un bloc couché (50 mm de haut, capteur à 60 mm) n'était vu que par le rayon du bas, en oblique (+3,5 %). Il est remplacé par un éventail qui remplit le cône : un rayon tous les `PAS_CONE_ULTRASON_DEG` (2,5°, constante de simulation), soit 113 rayons à 15°, lancés seulement à chaque mesure (rayons désactivés, `force_raycast_update`). Cône circulaire et bloc couché vu : HYPOTHÈSE (#53).
+
+**Vérification :** syntaxe de `vehicule.gd` et `arret_obstacle.gd` sans erreur. Essais ciblés (erreur d'arrêt avant → après) :
+
+| Cas | Idéal 100 | Réaliste 100 | Idéal 150 | Réaliste 150 |
+| --- | --- | --- | --- | --- |
+| `reference_droite` | 3,4 → 3,4 | 1,7 → 1,7 | 3,4 → 3,4 | 1,7 → 1,7 |
+| `face_debout` | 3,4 → 3,4 | 3,2 → 3,2 | 3,4 → 3,4 | 3,2 → 3,2 |
+| `face_couche` | 8,2 → 3,9 | 5,3 → 2,7 | 13,0 → 4,1 | 17,3 → 2,8 |
+| `obstacle_apres_virage` | 9,0 → 8,3 | 6,9 → 6,3 | 9,5 → 8,6 | 8,2 → 8,9 |
+
+Graine 39596 (réaliste, 40 pistes) : 21,9 → 5,0 mm. Graine 308842 (idéal) : 16,6 → 11,5 mm (reste : voiture inclinée d'environ 6° à l'arrêt, géométrie). La graine 205895 (24,7 mm, pistes libres réalistes) donnait déjà 3,1 mm depuis l'étape 1 : reste fermé.
+
+Banc complet de 40 pistes en modèle réaliste (graine de départ 1) : 40 sur 40 OK, 0 collision, erreur d'arrêt max 21,9 → **7,5 mm** (graine 142543), moyenne 3,8 → 2,5 mm, bille max 0,81 et marge à l'obstacle min 30,5 mm inchangées, temps total inchangé (2649 s). 27 lignes sur 40 changent. `essais/reference_realiste_1-240.csv` remplacée (ancienne : `_avant_revue03`).
+
+**Les 7 autres références de `essais/` ne sont plus à jour** (le cône change toutes les mesures) : à régénérer avec l'accord de Mehdi.

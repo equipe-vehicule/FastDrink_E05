@@ -81,7 +81,7 @@ var consigne_essai := -1.0               # m/s ; >= 0 : remplace la commande (ba
 
 var _modele: Node3D
 var _rayons_sondes: Array = []           # 5 sondes x 5 rayons (centre + 4 autour)
-var _rayons_ultrason: Array = []         # cone : axe + 2 rayons a +/- demi_angle_ultrason_deg
+var _rayons_ultrason: Array = []         # cone : eventail de rayons (PAS_CONE_ULTRASON_DEG)
 var _t_ultrason := 0.0
 var _temps := 0.0                        # s depuis placer() (horloge du retard de l'ultrason)
 var _en_transit: Array = []              # mesures prises mais pas encore livrees : [[instant de livraison, cm]]
@@ -99,6 +99,7 @@ var _pose := Transform3D()
 const COUCHE_OBSTACLES := 1
 const COUCHE_RUBAN := 2
 const COUCHE_VEHICULE := 8   # couche 4
+const PAS_CONE_ULTRASON_DEG := 2.5  # ecart entre rayons du cone de l ultrason (simulation seulement ; 15 deg -> 113 rayons)
 
 func _ready() -> void:
 	_pose = global_transform
@@ -131,18 +132,28 @@ func _ready() -> void:
 			groupe.append(r)
 		_rayons_sondes.append(groupe)
 	# Ultrason : cone vers l'avant (-Z) qui voit les obstacles (couche 1), la plus courte distance l'emporte.
-	# 5 rayons : l'axe, +/- demi_angle a gauche et a droite, +/- demi_angle en haut et en bas.
+	# Eventail de rayons qui remplit le cone (un rayon tous les PAS_CONE_ULTRASON_DEG en largeur et en hauteur).
+	# Revue 03 (14 nov.) : avant, 5 rayons (axe, +/- demi_angle a gauche, a droite, en haut, en bas) : un obstacle de
+	# 50 mm de large passait entre deux rayons (echos perdus, graine 39596) et un obstacle couche n'etait vu que par le
+	# rayon du bas, en oblique (+3,5 % a 15 deg). Le vrai capteur renvoie l'echo le plus proche dans tout le cone.
 	# HYPOTHESE : cone circulaire (meme demi-angle en hauteur ; le manuel p. 34 donne un cone de 30 a 40 deg sans
-	# distinguer). Le rayon du bas voit un obstacle couche de 50 mm, plus bas que le capteur (60 mm du sol).
+	# distinguer) ; un bloc couche de 50 mm (capteur a 60 mm du sol) est vu : a mesurer (#53).
 	# Le sol n'est pas sur la couche des obstacles : un echo du sol sur le vrai capteur n'est PAS simule (#53).
-	var demi := deg_to_rad(demi_angle_ultrason_deg)
-	for axe_angle in [[Vector3.UP, 0.0], [Vector3.UP, demi], [Vector3.UP, -demi], [Vector3.RIGHT, demi], [Vector3.RIGHT, -demi]]:
-		var r := RayCast3D.new()
-		r.position = (racine.get_node("Capteur_Ultrason") as Node3D).position
-		r.target_position = Vector3(0, 0, -portee_ultrason).rotated(axe_angle[0], axe_angle[1])
-		r.collision_mask = COUCHE_OBSTACLES
-		add_child(r)
-		_rayons_ultrason.append(r)
+	# Rayons desactives : lances seulement a chaque mesure (force_raycast_update), pas a chaque pas physique.
+	var n := int(floor(demi_angle_ultrason_deg / PAS_CONE_ULTRASON_DEG + 0.001))
+	for i in range(-n, n + 1):
+		for j in range(-n, n + 1):
+			var lacet := i * PAS_CONE_ULTRASON_DEG
+			var tangage := j * PAS_CONE_ULTRASON_DEG
+			if lacet * lacet + tangage * tangage > demi_angle_ultrason_deg * demi_angle_ultrason_deg + 0.001:
+				continue
+			var r := RayCast3D.new()
+			r.position = (racine.get_node("Capteur_Ultrason") as Node3D).position
+			r.target_position = Vector3(0, 0, -portee_ultrason).rotated(Vector3.RIGHT, deg_to_rad(tangage)).rotated(Vector3.UP, deg_to_rad(lacet))
+			r.collision_mask = COUCHE_OBSTACLES
+			r.enabled = false
+			add_child(r)
+			_rayons_ultrason.append(r)
 	# Detection de collision avec un obstacle : requete sur la boite d'encombrement du vehicule
 	_requete_collision = PhysicsShapeQueryParameters3D.new()
 	var b := BoxShape3D.new(); b.size = encombrement

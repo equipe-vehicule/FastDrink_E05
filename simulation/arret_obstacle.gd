@@ -31,6 +31,9 @@ func limiter(d_mm: float, cible: float, d_voulue_mm: float) -> float:
 	var restante := d_mm - _robot.ultrason_avant_mm - d_voulue_mm      # mm, < 0 = trop pres
 	if recul_autorise and restante < -seuil_recul_mm:
 		en_recul = true
+		# Revue 03 (14 nov.) : sans cela, arrete restait vrai depuis l'arret precedent ; le Controleur voyait
+		# « arretee et immobile » et passait en DECISION au meme tour : le recul n'avait jamais lieu (graine 39596).
+		arrete = false
 	if en_recul:
 		if restante >= 0.0:
 			en_recul = false

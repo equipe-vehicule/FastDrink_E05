@@ -21,6 +21,9 @@ const COLONNES_STABILITE := ["braquage_activite_deg_m", "braquage_vitesse_rms_de
 const COLONNES_OBSTACLES := ["marge_obstacle_min_mm", "poses"]
 ## Colonnes de l'etape 5 (stabilite du suivi, #74).
 const COLONNES_SUIVI := ["pertes_ligne_ailleurs"]
+## Colonnes de la revue 04 (marche arriere) : ecart maximal a l'axe du ruban, a la fin des reculs, du centre de la barre
+## de sondes et du milieu de l'essieu arriere (vide = piste sans axe connu, ex. piste Blender, ou aucun recul).
+const COLONNES_RECUL := ["ecart_sondes_fin_recul_max_mm", "ecart_essieu_fin_recul_max_mm"]
 const ETATS_CONTOURNEMENT := ["CONTOURNEMENT_FLUIDE", "CONTOURNEMENT"]
 ## Ligne perdue « apres un contournement » : l'episode commence moins de ca apres la fin du contournement.
 const FENETRE_APRES_CONTOURNEMENT_S := 3.0
@@ -37,6 +40,8 @@ var obstacles: Array = []
 ## Dernier point de la ligne de la piste en cours (x, z en m ; NAN = inconnu), Pistes.fin_de_ligne(). A donner apres chaque
 ## chargement de piste. Sert au controle « fin de ligne atteinte » des scenarios dont fin_attendue vaut BLOQUE.
 var fin_ligne := Vector2(NAN, NAN)
+## Axe du ruban de la piste en cours (x, z en m), metadonnee « ligne » ; vide = inconnu. A donner apres chaque chargement.
+var axe_ligne := PackedVector2Array()
 ## HYPOTHESE (non issue d'une exigence) : fin_attendue = BLOQUE seulement si la barre de sondes est a moins de ca du
 ## dernier point de la ligne au moment de l'arret ; sinon la voiture s'est bloquee en route (ECHEC « bloque_loin_fin_ligne »).
 var distance_fin_ligne_max_mm := 150.0
@@ -56,6 +61,8 @@ var _etat_prec := ""
 var _erreur_arret_max := 0.0      # mm, ecart maximal (en valeur absolue) entre l'arret mesure et distance_arret_mm
 var _reculs: Array[float] = []    # mm, distance reellement reculee devant chaque obstacle (position dans le monde)
 var _debut_recul := Vector3.ZERO
+var _ecart_sondes_recul := NAN    # mm, ecart maximal des sondes a l'axe du ruban a la fin d'un recul
+var _ecart_essieu_recul := NAN    # mm, idem pour le milieu de l'essieu arriere
 # Ligne perdue pendant le suivi (aucune sonde ne la voit)
 var _fin_contournement := -INF    # instant de la fin du dernier contournement (s)
 var _debut_perte := -1.0          # debut de l'episode en cours (s), < 0 = ligne vue
@@ -81,7 +88,7 @@ func demarrer() -> void:
 	# Ligne lue par les scripts d'essai pour retrouver le fichier de resultats (voulue, pas du debogage)
 	print("FICHIER %s" % ProjectSettings.globalize_path(nom))
 	var entete := ([] if scenarios.is_empty() else ["cas"]) + ENTETE + COLONNES_STABILITE + ["verdict", "raisons_echec"] \
-			+ COLONNES_OBSTACLES + COLONNES_SUIVI
+			+ COLONNES_OBSTACLES + COLONNES_SUIVI + COLONNES_RECUL
 	_fichier.store_csv_line(PackedStringArray(entete))
 	_i = 0
 	_ok = 0
@@ -109,6 +116,8 @@ func _reinitialiser() -> void:
 	_erreur_arret_max = 0.0
 	_distance_fin_ligne_mm = NAN
 	_reculs.clear()
+	_ecart_sondes_recul = NAN
+	_ecart_essieu_recul = NAN
 	_fin_contournement = -INF
 	_debut_perte = -1.0
 	_pertes_apres = 0
@@ -137,6 +146,21 @@ func _mesurer_sequence(etat: String, v: Vehicule, c: Controleur) -> void:
 		_debut_recul = v.global_position
 	elif _etat_prec == "RECUL_OBSTACLE":
 		_reculs.append(v.global_position.distance_to(_debut_recul) * 1000.0)
+		if axe_ligne.size() >= 2:
+			var t := v.global_transform
+			var essieu := t.origin + t.basis.z * (v.empattement / 2.0)
+			var sondes := essieu - t.basis.z * (c.robot.distance_sondes_mm / 1000.0)
+			var e_s := _distance_axe(Vector2(sondes.x, sondes.z)) * 1000.0
+			var e_e := _distance_axe(Vector2(essieu.x, essieu.z)) * 1000.0
+			_ecart_sondes_recul = e_s if is_nan(_ecart_sondes_recul) else maxf(_ecart_sondes_recul, e_s)
+			_ecart_essieu_recul = e_e if is_nan(_ecart_essieu_recul) else maxf(_ecart_essieu_recul, e_e)
+
+## Distance (m) d'un point a l'axe du ruban (ligne brisee `axe_ligne`).
+func _distance_axe(p: Vector2) -> float:
+	var d := INF
+	for i in axe_ligne.size() - 1:
+		d = minf(d, p.distance_to(Geometry2D.get_closest_point_to_segment(p, axe_ligne[i], axe_ligne[i + 1])))
+	return d
 
 ## Episodes de ligne perdue pendant le suivi : classes « apres un contournement » (commences moins de
 ## FENETRE_APRES_CONTOURNEMENT_S apres sa fin) ou « ailleurs » (virages, approche d'un obstacle...).
@@ -355,6 +379,8 @@ func suivre(temps: float, dt: float, v: Vehicule, bille: BilleCuvette, c: Contro
 	ligne.append("" if is_inf(_marge_obstacle) else str(snapped(_marge_obstacle * 1000.0, 0.1)))
 	ligne.append(_texte_poses(g))
 	ligne.append(str(_pertes_ailleurs))
+	for e in [_ecart_sondes_recul, _ecart_essieu_recul]:
+		ligne.append("" if is_nan(e) else str(snapped(e, 0.1)))
 	if _scenario != "":
 		ligne.insert(0, _scenario)
 	_fichier.store_csv_line(ligne)

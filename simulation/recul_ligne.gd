@@ -15,6 +15,7 @@ enum Fin { EN_COURS, TERMINE, LIGNE_PERDUE }
 @export var point_virtuel_mm: float # distance du point asservi derriere l'essieu arriere (plus grand = plus doux)
 @export var gain_recul: float     # 1/s : vitesse de convergence du point virtuel vers la ligne
 @export var ligne_perdue_recul_s: float # ligne invisible plus longtemps : perdue
+@export var vitesse_min_loi_mm_s: float # plancher de |v| dans la loi : evite la division par ~0 au demarrage
 ## Ligne perdue en cours de recul : true = finir la distance tout droit (odometrie), false = s'arreter (Fin.LIGNE_PERDUE).
 ## Voiture arretee de travers en sortie de virage (jusqu'a 19 deg) : en reculant, les sondes quittent la ligne apres
 ## ~110 mm (banc du 12 nov. : reculs de 78 a 108 mm pour 150 demandes). La distance de recul est imposee, et la ligne
@@ -73,9 +74,14 @@ func calculer(somme: float, n: int, dt: float, v_mm_s: float) -> Vector2:
 ##   ecart de P a la ligne : e_p = e + (D + B) * sin(cap)        (D = distance_sondes_mm)
 ##   loi : delta = L / B * (cap + gain_recul * e_p / |v|)  =>  P converge vers la ligne
 ## et, contrairement aux sondes, garder P sur la ligne est stable en marche arriere.
+## Limite (revue 04, 14 nov.) : le cap de depart sert de direction de la ligne. Apres un virage de 90 deg, la voiture
+## s'arrete a ~6 deg de la ligne, essieu a ~29 mm, sondes presque dessus ; en 150 mm de recul, la loi garde les sondes
+## sur la ligne et l'essieu finit a ~38 mm. Essaye et rejete : estimer la direction de la ligne (correction integrale)
+## ramene un peu l'essieu mais les sondes perdent la ligne.
 func _angle_recul(erreur_mm: float, v_mm_s: float) -> float:
-	var e_p := erreur_mm + (_robot.distance_sondes_mm + point_virtuel_mm) * sin(_odo.cap)
-	var v := maxf(absf(v_mm_s), 20.0)        # evite la division par ~0 au demarrage
-	var delta := _robot.empattement_mm / point_virtuel_mm * (_odo.cap + gain_recul * e_p / v)
+	var cap := _odo.cap
+	var e_p := erreur_mm + (_robot.distance_sondes_mm + point_virtuel_mm) * sin(cap)
+	var v := maxf(absf(v_mm_s), vitesse_min_loi_mm_s)
+	var delta := _robot.empattement_mm / point_virtuel_mm * (cap + gain_recul * e_p / v)
 	var servo := _robot.roues_vers_servo(rad_to_deg(delta))
 	return 90.0 + clampf(servo, -45.0, 45.0)

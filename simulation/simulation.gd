@@ -202,6 +202,7 @@ func _charger_cas_suivant() -> void:
 			if charger_scenario(cas):
 				banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
 				banc.fin_ligne = pistes.fin_de_ligne()
+				banc.axe_ligne = pistes.actuelle.get_meta("ligne", PackedVector2Array())
 				return
 			banc.noter_invalide()
 		else:
@@ -210,6 +211,7 @@ func _charger_cas_suivant() -> void:
 			charger_piste(Pistes.INDEX_ALEATOIRE, cas)
 			banc.obstacles = pistes.actuelle.get_meta("obstacles", [])
 			banc.fin_ligne = pistes.fin_de_ligne()
+			banc.axe_ligne = pistes.actuelle.get_meta("ligne", PackedVector2Array())
 			return
 	_trace.fermer()
 	if _quitter_a_la_fin:

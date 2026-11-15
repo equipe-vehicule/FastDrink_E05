@@ -110,6 +110,7 @@
 		"point_virtuel_mm": 100.0,
 		"gain_recul": 1.5,
 		"ligne_perdue_recul_s": 0.3,
+		"vitesse_min_loi_mm_s": 20.0,
 		"finir_sans_ligne": true,
 		"reprendre_apres_recul": false
 	},

@@ -411,7 +411,7 @@ Ajouts pour les essais : option `--journal` (journal détaillé `journaux/essai_
 
 ### Le braquage (candidats C1 à C4) : aucun retenu
 
-L'erreur mesurée ne prend que les valeurs 0, ±9,5, ±19, ±28,5 et ±38 mm (sondes à 19 mm, ruban de 18 mm). Avec `kp` = 1,8, le plus petit pas vaut 17° de servo. Les candidats sont des réglages de `suivi_ligne.gd`, **désactivés par défaut** (comportement inchangé, vérifié). Ils restent dans le code pour d'autres essais.
+L'erreur mesurée ne prend que les valeurs 0, ±9,5, ±19, ±28,5 et ±38 mm (sondes à 19 mm, ruban de 18 mm). Avec `kp` = 1,8, le plus petit pas vaut 17° de servo. Les candidats étaient des réglages de `suivi_ligne.gd`, désactivés par défaut pendant les essais ; ils ont été retirés du code depuis (aucun n'est retenu, revue de l'étape 2 du 14 nov.).
 
 Tri sur 6 cas (`reference_droite`, `virage_serre`, `s_serre`, `demi_tour`, `courbes_120`, `parcours_fourni`) :
 
@@ -726,3 +726,11 @@ Vérification : les 8 bancs (idéal et réaliste : 40 pistes, 15 pistes à D_rec
 **Cône de l'ultrason (même jour) :** `demi_angle_ultrason_deg` passe de 7,5 à 15 (30° au total, manuel PiCar-S p. 60 ; choix de Mehdi en attendant la mesure, #53). La valeur sert au modèle du capteur et aux algorithmes (`controleur.gd`, `contournement.gd`).
 
 **Vérification :** banc de 5 pistes (réaliste et idéal, avec l'arrière à 56 mm seul) : 5 sur 5 OK. Avec les deux changements : banc de 5 pistes réaliste 5 sur 5 OK ; 25 scénarios fixes 25 sur 25 OK. Comparé à `essais/scenarios_reference_realiste.csv`, mêmes manœuvres ; l'erreur d'arrêt maximale monte jusqu'à 6,9 mm (`obstacle_apres_virage`, contre 1,3), toujours sous la tolérance de 30 mm ; bille au plus 0,87. Banc complet de 40 pistes à faire en fin d'étape.
+
+## Revue du suiveur de ligne (14 novembre, étape 2)
+
+**Ce qui change :** aucun gain ni aucune valeur. Revue de `suivi_ligne.gd`, de la section `suivi` de `reglages_algorithmes.json`, de l'état SUIVI de `controleur.gd` et des sondes et du servo de `vehicule.gd` (revue complète : `Claude outputs/REVUE_02_SUIVI_LIGNE_2026-11-14.md`). Décisions de Mehdi : P1, l'angle des roues de 45° passe au statut « mesuré » dans `reglages_robot.json` et `MESURES_ROBOT.md` (Mehdi, confirmé le 14 nov.) ; P3, les commentaires de `INTEGRALE_MAX` et `FILTRE_DERIVEE` disent qu'ils viennent d'essais sans source écrite, et que le filtre de la dérivée dépend de la fréquence de la boucle (constante de temps ≈ 56 ms à 50 Hz, formule pour une autre fréquence) ; les deux constantes sont listées dans `MESURES_ROBOT.md`. P2 reportée : déplacer ces deux constantes dans `reglages_algorithmes.json` casserait le chargeur Python (il refuse les clés inconnues) ; à faire avec `suivi_ligne.py` quand le Python reprendra. P4 non retenue.
+
+**Limite connue (géométrie, pas un défaut de réglage) :** la barre de sondes est à 217 mm devant l'essieu ; à 45° de roue elle décrit au moins √(138² + 217²) ≈ 257 mm de rayon. Dans les courbes de 120 mm (guide, section 1), la ligne sort donc des sondes et le rattrapage en marche arrière (#74) la retrouve.
+
+**Vérification :** syntaxe de `suivi_ligne.gd` sans erreur ; 5 scénarios en modèle idéal (`reference_droite`, `virage_serre`, `s_serre`, `courbes_120`, `parcours_fourni`) identiques avant et après. Banc complet de 40 pistes en modèle réaliste (graine de départ 1) : 40 sur 40 OK, 0 collision, bille au plus 0,81 (`journaux/banc_2026-11-14T19-42-06_15332.csv`). Il diffère de `essais/reference_realiste_1-240.csv` sur 2 pistes (graine 7920 : erreur d'arrêt 1,9 mm contre 0,1 ; graine 15839 : 7,4 contre 1,8), sous la tolérance de 30 mm. Cause probable, non démontrée : la revue des dimensions (arrière à 56 mm, cône de 30°), puisque cette étape-ci ne change que des commentaires ; la référence n'a pas été régénérée.

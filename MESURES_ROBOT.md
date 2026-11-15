@@ -23,7 +23,7 @@ Tant que ces valeurs sont provisoires, la simulation ne prédit pas le robot : e
 | Zone morte des moteurs (avant et arrière) | 13 (**hypothèse** : ≈ 13 noté dans `SUIVI_SIMULATION.md`, sans mesure). Elle découle de la table (point [13, 0]) : la clé `zone_morte_moteur_cmd` est supprimée (une valeur, un endroit). Vitesses minimales des algorithmes (dans `reglages_algorithmes.json`), maintenant en **mm/s** (ex-commandes × 4) : la zone morte est gérée par la table, qui convertit en commande au-dessus de 13 : `robot:vitesse_approche_min_mm_s` (32), `arret:vitesse_recul_mm_s` (40), `recul:vitesse_recul_ligne_mm_s` (60), `rattrapage:vitesse_mm_s` (60) | `table_vitesse_mm_s` | #51 | Hypothèse, à mesurer |
 | Temps de réponse du moteur | 0 s (instantané) | `constante_temps_moteur_s` | #51 | À mesurer |
 | Vitesse du servo de direction | 300 ° de servo par seconde (manuel p. 61, à vide : 0,12 à 0,14 s/60°) | `vitesse_servo_deg_s` | #51 | À mesurer |
-| Angle réel des roues (servo à 45 et 135) | 45° (rayon minimal 138 mm) | `angle_roues_max_deg` | #19 | À mesurer |
+| Angle réel des roues (servo à 45 et 135) | 45° (rayon minimal 138 mm) ; mesuré (Mehdi, confirmé le 14 nov., revue de l'étape 2) | `angle_roues_max_deg` | #19 | Mesuré |
 | Dérive en ligne droite (servo à 90) | aucune (dérive à droite à basse vitesse observée) | non modélisée | #18, #51 | À mesurer |
 
 ## Géométrie
@@ -77,6 +77,7 @@ Hors `reglages_robot.json`, dans **`reglages_algorithmes.json`** : valeurs chois
 | Tentatives de rattrapage et côté gardé | `tentatives_max` 4 (plus petite valeur qui passe, graine 47515) ; `garder_cote` vrai. Épingles de rayon ≈ 125 à 140 mm, sous le rayon minimal de la voiture (138 mm) | `reglages_algorithmes.json` `rattrapage:tentatives_max`, `rattrapage:garder_cote` | #75 | Hypothèse |
 | Durée maximale de l'arrêt d'urgence en manœuvre (écho filtré sous `distance_securite_mm` = 40 mm) | 3,0 s (**HYPOTHESE**, 14 nov., Mehdi) : doit dépasser `absence_proche_s` (1,0 s), plus 2 s pour un obstacle passager (main), sans mesure ; au-delà, la manœuvre se termine comme au timeout de 10 s (RETROUVER ou BLOQUE) | `reglages_algorithmes.json` `controleur:arret_urgence_max_s` | #64 | À vérifier sur le robot |
 | Marge de la vérification du contournement fluide | 20 mm, inchangée ; son ancienne justification (retard de suivi de 12 mm) ne tient plus depuis que la vérification rejoue la poursuite (marge prévue ≈ réelle à 3 à 6 mm près) | `reglages_algorithmes.json` `fluide:marge_obstacle_mm` | #76 | Hypothèse, à revoir avec les essais sur le robot |
+| Borne de l'intégrale et filtre de la dérivée du suivi | `INTEGRALE_MAX` 60 mm·s (au plus 30° de servo) ; `FILTRE_DERIVEE` 0,3 **par tour de boucle** (≈ 56 ms à 50 Hz ; si la fréquence mesurée sur le Pi diffère, garder ≈ 56 ms : 1 − exp(−dt / 0,056)). Réglages par essais, sans source écrite. Encore en `const` : passage dans `reglages_algorithmes.json` reporté jusqu'à la reprise du Python (le chargeur Python refuse une clé inconnue ; revue de l'étape 2, P2) | `simulation/suivi_ligne.gd` (`const`) ; `code_picar/fastdrink/conduite/suivi_ligne.py` | #64 | Hypothèse, à vérifier sur le robot |
 
 ## Épreuve (à demander au professeur)
 

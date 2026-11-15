@@ -26,7 +26,11 @@ enum Ligne { VUE, ENTRE_SONDES, PERDUE }
 
 const POSITIONS_SONDES_MM := [-38.0, -19.0, 0.0, 19.0, 38.0]
 const ERREUR_MAX_MM := 38.0       # ecart maximal mesurable avec la ligne visible
-const INTEGRALE_MAX := 60.0       # anti-windup (mm*s)
+const INTEGRALE_MAX := 60.0       # anti-windup (mm*s) ; reglage par essais, sans source ecrite (au plus ki x 60 = 30 deg)
+## Filtre de la derivee, applique UNE FOIS PAR TOUR de boucle : son effet depend de frequence_controle_hz.
+## A 50 Hz (provisoire, #64) : constante de temps ~ -0,02 / ln(0,7) = 56 ms. Si la frequence mesuree sur le Pi differe,
+## garder ~56 ms : FILTRE_DERIVEE = 1 - exp(-dt / 0,056). Reglage par essais, sans source ecrite.
+## A deplacer dans reglages_algorithmes.json avec INTEGRALE_MAX quand le Python reprendra (revue de l'etape 2, P2 reportee).
 const FILTRE_DERIVEE := 0.3       # 0..1 : plus petit = derivee plus lissee
 
 ## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « suivi »), lues au demarrage ; ici : type et justification seulement.

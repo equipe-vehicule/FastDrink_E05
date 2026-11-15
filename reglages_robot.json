@@ -26,7 +26,7 @@
   "erreur_vitesse_odometrie": {"valeur": 0.0, "unite": "fraction (0,05 = +5 %)", "statut": "hypothèse", "source": "L'odométrie utilise la même table que le modèle (étalonnage supposé parfait), multipliée par (1 + cette valeur). 0 = parfaite ; à faire varier pour les essais de sensibilité.", "tache": "#18"},
   "constante_temps_moteur_s": {"valeur": 0.0, "unite": "s", "statut": "provisoire", "source": "Moteur instantané (non mesuré).", "tache": "#51"},
 
-  "angle_roues_max_deg": {"valeur": 45.0, "unite": "°", "statut": "provisoire", "source": "Angle des roues avec le servo à 45 ou 135. Manuel PiCar-S : non précisé (p. 47 raisonne avec 45°).", "tache": "#19"},
+  "angle_roues_max_deg": {"valeur": 45.0, "unite": "°", "statut": "mesuré", "source": "Angle des roues avec le servo à 45 ou 135 : mesuré (Mehdi, confirmé le 14 nov. ; méthode non notée). Manuel PiCar-S : non précisé (p. 47 raisonne avec 45°).", "tache": "#19"},
   "vitesse_servo_deg_s": {"valeur": 300.0, "unite": "° de servo par s", "statut": "provisoire", "source": "Valeur provisoire. Manuel p. 61 (servo à vide) : 0,14 s/60° à 4,8 V, 0,12 s/60° à 6 V, soit ≈ 430 à 500 °/s ; en charge : non précisé.", "tache": "#51"},
 
   "demi_angle_ultrason_deg": {"valeur": 15.0, "unite": "°", "statut": "provisoire", "source": "Cône de 30° au total : manuel PiCar-S p. 60 « about 30 degrees » (p. 34 : 30~40). Choix de Mehdi du 14 nov. (avant : 15° au total). À mesurer.", "tache": "#53"},

@@ -770,4 +770,18 @@ Graine 39596 (réaliste, 40 pistes) : 21,9 → 5,0 mm. Graine 308842 (idéal) : 
 
 Banc complet de 40 pistes en modèle réaliste (graine de départ 1) : 40 sur 40 OK, 0 collision, erreur d'arrêt max 21,9 → **7,5 mm** (graine 142543), moyenne 3,8 → 2,5 mm, bille max 0,81 et marge à l'obstacle min 30,5 mm inchangées, temps total inchangé (2649 s). 27 lignes sur 40 changent. `essais/reference_realiste_1-240.csv` remplacée (ancienne : `_avant_revue03`).
 
-**Les 7 autres références de `essais/` ne sont plus à jour** (le cône change toutes les mesures) : à régénérer avec l'accord de Mehdi.
+**Les 7 autres références régénérées (Mehdi, 14 nov.)**, mêmes commandes qu'à l'étape 1 (graine de départ 1 ; D_recul 50 : `--banc=15 --reglage=epreuve:distance_recul_mm=50` ; pistes libres : `--parametre-piste=generateur="libre"`). Les anciennes sont gardées avec le suffixe `_avant_revue03`. Collisions : 0 partout ; manœuvres inchangées sauf la graine libre réaliste 269247 (voir plus bas) :
+
+| Référence | Lignes changées | Verdicts OK (avant) | Erreur d'arrêt max (avant) | Marge obstacle min (avant) | Bille max (avant) |
+| --- | --- | --- | --- | --- | --- |
+| Idéal, 40 pistes (`reference_1-240.csv`) | 24/40 | 40/40 (40/40) | 11,5 mm (16,6) | 26,4 mm (26,4) | 0,80 (0,80) |
+| Idéal, D_recul 50 (`reference_recul50.csv`) | 7/15 | 15/15 (15/15) | 15,0 (18,4) | 27,7 (27,3) | 0,66 (0,67) |
+| Idéal, libres (`reference_libre.csv`) | 31/40 | 39/40 (39/40, 47515 BLOQUE) | 9,8 (14,9) | 23,0 (21,2) | 0,94 (0,95) |
+| Idéal, scénarios (`scenarios_reference.csv`) | 8/25 | 25/25 (25/25) | 8,3 (9,0) | 34,1 (32,9) | 0,80 (0,80) |
+| Réaliste, D_recul 50 (`reference_realiste_recul50.csv`) | 9/15 | 15/15 (15/15) | 14,2 (13,7) | **29,3 (10,6)** | 0,72 (0,76) |
+| Réaliste, libres (`reference_realiste_libre.csv`) | 33/40 | **39/40 (40/40)** | 10,1 (14,7) | 22,4 (24,2) | 1,00 (1,00) |
+| Réaliste, scénarios (`scenarios_reference_realiste.csv`) | 9/25 | 25/25 (25/25) | 6,3 (6,9) | 32,3 (27,0) | 0,87 (0,87) |
+
+La marge de 10,6 mm (graine 95029, D_recul 50 réaliste, signalée à l'étape 1) remonte à 29,3 mm.
+
+**Nouvel échec : graine libre réaliste 269247, bille tombée à 97,0 s** (avant : OK, bille 0,68 ; listée parmi les restes avec 0,97 à l'étape 10). Les 3 premiers obstacles se passent comme avant. Le 4e contournement fluide (fin à 91,9 s) se termine sans ligne sous les sondes (`fluide_fin_sans_ligne`) ; la voiture roule 4 s en SUIVI sans voir la ligne, la bille oscille jusqu'à 0,65, puis RATTRAPAGE (95,98 s) avance, s'arrête et recule : la bille tombe. L'arrêt lui-même n'est pas en cause (erreur 3,8 mm) ; le cône change un peu la position d'arrêt, donc la trajectoire du contournement. À traiter aux étapes du contournement et de la récupération de la ligne (`journaux/essai_2026-11-14T20-48-16_11536.csv`, rejouable : `--banc=1 --graine-depart=269247 --parametre-piste=generateur="libre" --journal`).

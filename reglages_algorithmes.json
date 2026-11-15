@@ -142,12 +142,14 @@
 		"duree_avant_s": 1.0,
 		"duree_arriere_s": 1.0,
 		"vitesse_mm_s": 72.0,
-		"duree_max_s": 20.0
+		"duree_max_s": 20.0,
+		"angle_ligne_deg": 150.0,
+		"angle_max_deg": 210.0
 	},
 	"reprise": {
 		"duree_s": 1.0,
 		"vitesse_max_mm_s": 100.0,
-		"braquage_max_deg_s": 120.0
+		"braquage_max_deg_s": 60.0
 	},
 	"memoire": {
 		"rayon_chemin_mm": 40.0,

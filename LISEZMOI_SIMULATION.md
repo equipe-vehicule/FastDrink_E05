@@ -690,7 +690,7 @@ Avant l'étape 10 (réaliste) : 40 pistes marge min 17,5 mm ; D_recul 50 marge m
 
 ## Fichier unique des réglages des algorithmes (14 novembre, tâche #63, partie algorithmes)
 
-Les réglages du contrôleur et de ses modules sont maintenant dans **`reglages_algorithmes.json`** (racine du dépôt), seule source de leurs valeurs : le robot pourra donc être réglé sur le Raspberry Pi sans Godot (le Python lira le même fichier avec `json.load`). Un objet par module, avec les mêmes noms que `--reglage=<module>:<clé>=<valeur>` : `controleur` (réglages du `Controleur` lui-même), `robot` (rampes et freinage de `reglages_robot.gd`, hors `reglages_robot.json`), `epreuve`, `suivi`, `ultrason`, `arret`, `contournement`, `fluide`, `recul`, `rattrapage`, `retrouver`, `demi_tour`, `reprise`, `memoire` (129 valeurs). `odometrie` n'a aucun réglage. Les valeurs du modèle de simulation (bruit, valeurs aberrantes, retard…) restent dans `reglages_robot.json`.
+Les réglages du contrôleur et de ses modules sont maintenant dans **`reglages_algorithmes.json`** (racine du dépôt), seule source de leurs valeurs : le robot pourra donc être réglé sur le Raspberry Pi sans Godot (le Python lira le même fichier avec `json.load`). Un objet par module, avec les mêmes noms que `--reglage=<module>:<clé>=<valeur>` : `controleur` (réglages du `Controleur` lui-même), `robot` (rampes et freinage de `reglages_robot.gd`, hors `reglages_robot.json`), `epreuve`, `suivi`, `ultrason`, `arret`, `contournement`, `fluide`, `recul`, `rattrapage`, `retrouver`, `demi_tour`, `reprise`, `memoire` (133 valeurs). `odometrie` n'a aucun réglage. Les valeurs du modèle de simulation (bruit, valeurs aberrantes, retard…) restent dans `reglages_robot.json`.
 
 Dans les `.gd`, chaque réglage garde sa déclaration typée et ses commentaires de justification, mais sans valeur : `@export var kp: float`. Le marquage `@export` désigne les réglages (les variables d'état, `_x` ou sans `@export`, n'y sont pas) ; le chargeur s'en sert pour signaler toute clé manquante ou en trop. Les `const` restent dans le code (constantes de structure, bornes du guide comme `RECUL_MAX_MM`, constantes du Kalman reprises de `config.py`).
 
@@ -828,3 +828,34 @@ Fins sans ligne du fluide : 1 → 0 ; contournements sans retour sur la ligne : 
 **Constats des nouvelles mesures :** la marge minimale est toujours en `CONTOURNEMENT_FLUIDE SORTIE` (fluide) ou `CONTOURNEMENT ECART` (phases, D_recul 50) ; 95029 (réaliste, D_recul 50) : 29,3 mm en ECART à 43,32 s, au 2e contournement par phases, parti avec l'essieu à 19,9 mm de la ligne (lien avec P2, non retenue). Retour sur la ligne : médiane 4,7 à 4,8 s (environ 0,95 m) en fluide, 12 s par phases.
 
 **Reste ouvert :** la bille est sensible au moment de la reprise. En moyenne elle baisse sur chaque banc (−0,02 à −0,05), mais quelques cas montent par effet de seuil : 7920 (idéal) 0,56 → 0,85, 79191 (réaliste) 0,56 → 0,76, 205895 (libre) 0,71 → 0,78. Entre 260 et 280, la bille de 7920 (réaliste) passe de 0,63 à 0,85. Piste : reprendre la ligne en douceur après le S (à l'étape de la récupération de la ligne).
+
+## Revue de la récupération de la ligne (15 novembre, étape 6)
+
+Revue complète : `Claude outputs/REVUE_06_RECUPERATION_2026-11-14.md`. Périmètre : `rattrapage.gd`, `retrouver_ligne.gd`, `demi_tour.gd`, `reprise_douce.gd`, `memoire_parcours.gd` et les états RATTRAPAGE, RETROUVER, DEMI_TOUR, BLOQUE. Aucune exigence chiffrée sur la récupération (guide, section 1 : courbes de 120 mm et plus, bille sans chute) ; les réglages sont des choix de conception.
+
+**Ce qui change (acceptés par Mehdi le 15 nov. : P1, P2, P3) :**
+- P1, `reglages_algorithmes.json` : `reprise:braquage_max_deg_s` 120 → **60** (**HYPOTHÈSE**, balayage sur 5 graines puis banc complet). Le pic de bille survient quand la reprise douce se relâche (PID à environ 1,2 Hz, près de la fréquence propre de la bille). Allonger `reprise:duree_s` fait bloquer la graine 47515 : écarté.
+- P2, `demi_tour.gd` : le demi-tour ne se termine plus par la détection de la ligne pendant une marche arrière (le suivi aurait inversé la marche tout de suite) ; il attend la phase avant. Les limites de rotation maximale et de durée maximale s'appliquent toujours. Vérifié par un test hors piste de `DemiTour` seul : aucun banc n'entre en DEMI_TOUR.
+- P3, `demi_tour.gd` et `reglages_algorithmes.json` : seuils en dur déplacés dans `demi_tour:angle_ligne_deg` (150) et `demi_tour:angle_max_deg` (210), mêmes valeurs (**HYPOTHÈSE**, valeurs d'avant). Le fichier compte 133 valeurs (131 avant).
+
+**Vérification :** syntaxe sans erreur ; 5 cas ciblés (billes 0,53 / 0,81 / 0,77 / 0,58 / 0,79) ; banc complet unique (8 références, mêmes commandes que l'étape 3), anciennes références gardées en `essais/*_avant_revue06.csv`.
+
+| Banc | Verdicts avant → après | Coll. | Bille max | Marge min (mm) |
+| --- | --- | --- | --- | --- |
+| Idéal, 40 pistes | 40/40 → 40/40 | 0 | 0,85 → 0,80 (190057) | 26,4 → 26,4 |
+| Idéal, D_recul 50 | 15/15 → 15/15 | 0 | 0,66 → 0,82 (15839) | 27,7 → 27,7 |
+| Idéal, pistes libres | 40/40 → 40/40 | 0 | 0,94 → 0,80 (47515) | 23,7 → 24,3 |
+| Idéal, 25 scénarios | 25/25 → 25/25 | 0 | 0,84 → 0,81 | 34,1 → 23,8 |
+| Réaliste, 40 pistes | 40/40 → 40/40 | 0 | 0,81 → 0,83 (213814) | 30,5 → 30,5 |
+| Réaliste, D_recul 50 | 15/15 → 15/15 | 0 | 0,72 → 0,89 (15839) | 29,3 → 29,1 |
+| Réaliste, pistes libres | 40/40 → 40/40 | 0 | 1,00 → 0,83 (95029) | 21,1 → 23,2 |
+| Réaliste, 25 scénarios | 25/25 → 25/25 | 0 | 0,84 → 0,86 | 32,3 → 32,3 |
+
+Contournements, demi-tours et fins sans ligne : identiques partout ; seuls les rattrapages changent (pistes libres : 92 → 103 en idéal, 93 → 105 en réaliste).
+
+**Constats à surveiller :**
+- Bille : la bille max baisse sur les pistes libres (0,94 → 0,80 ; 1,00 → 0,83) mais monte sur quelques graines (15839 en D_recul 50 : 0,66 → 0,82 idéal, 0,66 → 0,89 réaliste ; 213814 : 0,59 → 0,80 idéal, 0,55 → 0,83 réaliste). Effet de seuil comme à la revue 05 : le maximum global baisse, mais des cas isolés montent. Le réglage 60°/s reste une hypothèse (5 graines essayées, un banc complet).
+- Marge minimale des 25 scénarios idéaux : 34,1 → 23,8 mm, due à `recul_court_deux_obstacles` (contournement par phases, état ECART, 42,8 → 23,8 mm) : la trajectoire de reprise change avec le braquage limité. Toujours positive, 0 collision, et dans la plage des autres bancs (21 à 24 mm sur les pistes libres).
+- `courbes_120` finit en BLOQUE dans les deux modèles avec verdict OK : déjà vrai avant cette revue ; le verdict du banc ne tient pas compte de BLOQUE (à décider).
+
+**Python à reporter (étape 11 en pause, non touché) :** `code_picar/fastdrink/conduite/demi_tour.py` (150°/210° en dur, fin seulement en phase avant) et `reprise` (`braquage_max_deg_s` 60) dans le fichier de réglages lu par le Python.

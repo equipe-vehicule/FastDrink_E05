@@ -9,6 +9,8 @@ extends RefCounted
 @export var duree_arriere_s: float   # duree de chaque marche arriere (braquage oppose)
 @export var vitesse_mm_s: float # (= ancienne commande 18 a 4 mm/s par commande)
 @export var duree_max_s: float
+@export var angle_ligne_deg: float   # rotation a partir de laquelle une sonde allumee termine le demi-tour (HYPOTHESE : ancienne valeur en dur)
+@export var angle_max_deg: float     # rotation maximale : arret quoi qu'il arrive (HYPOTHESE : ancienne valeur en dur)
 
 var termine := false
 
@@ -28,10 +30,13 @@ func ecart_reprise_mm() -> float:
 ## cap : cap global actuel (rad). Retourne Vector2(angle servo, vitesse cible). Regarder `termine` ensuite.
 func calculer(n: int, cap: float, t_etat: float) -> Vector2:
 	var tourne := absf(cap - _cap_debut)
-	if (tourne >= deg_to_rad(150.0) and n > 0) or tourne >= deg_to_rad(210.0) or t_etat > duree_max_s:
+	var periode := duree_avant_s + duree_arriere_s
+	var en_avant := fmod(t_etat, periode) < duree_avant_s
+	# Ligne revue : on finit pendant une marche avant seulement (revue 06) ; fini en marche arriere, le suivi aurait
+	# inverse la marche tout de suite. Rotation maximale ou duree maximale : arret immediat.
+	if (tourne >= deg_to_rad(angle_ligne_deg) and n > 0 and en_avant) or tourne >= deg_to_rad(angle_max_deg) or t_etat > duree_max_s:
 		termine = true
 		return Vector2(90.0, 0.0)
-	var periode := duree_avant_s + duree_arriere_s
-	if fmod(t_etat, periode) < duree_avant_s:
+	if en_avant:
 		return Vector2(90.0 + 45.0 * _cote, vitesse_mm_s)
 	return Vector2(90.0 - 45.0 * _cote, -vitesse_mm_s)

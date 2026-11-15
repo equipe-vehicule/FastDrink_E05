@@ -8,7 +8,7 @@ extends RefCounted
 ## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « reprise »), lues au demarrage ; ici : type et justification seulement.
 @export var duree_s: float
 @export var vitesse_max_mm_s: float # (= ancienne commande 25 a 4 mm/s par commande)
-@export var braquage_max_deg_s: float
+@export var braquage_max_deg_s: float   # limite de rotation du braquage (HYPOTHESE, revue 06 : 60 deg/s, essais sur 5 graines puis banc complet)
 
 var _t := 0.0
 var _angle_prec := 90.0              # dernier angle commande (deg de servo)

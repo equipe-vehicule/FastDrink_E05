@@ -285,12 +285,15 @@ func _troncons_droits() -> Array:
 	return troncons
 
 ## Case droite (la precedente, elle et la suivante sont alignees), avec une case de chaque cote dans la grille
-## (le contournement sort de la case).
+## (le contournement sort de la case) et sans ruban dans ces cases laterales : « toujours la place pour la
+## manoeuvre » (precisions du 12 nov.) ; un ruban voisin a 2 x rayon (>= 240 mm) serait sous la voiture qui
+## contourne (revue 07, HYPOTHESE : somme de cotes, voir REVUE_07 section 5).
 func _case_droite(i: int) -> bool:
 	var dir := chemin[i] - chemin[i - 1]
 	if chemin[i + 1] - chemin[i] != dir: return false
 	var cote := Vector2i(dir.y, dir.x)
-	return _dans_grille(chemin[i] + cote) and _dans_grille(chemin[i] - cote)
+	if not (_dans_grille(chemin[i] + cote) and _dans_grille(chemin[i] - cote)): return false
+	return not chemin.has(chemin[i] + cote) and not chemin.has(chemin[i] - cote)
 
 ## Vrai si le point (x, z du monde, en m) est sur une case droite du chemin (meme direction en entree et en sortie).
 ## Meme repere que ConstructionPiste : grille centree sur l'origine du monde.

@@ -859,3 +859,15 @@ Contournements, demi-tours et fins sans ligne : identiques partout ; seuls les r
 - `courbes_120` finit en BLOQUE dans les deux modèles avec verdict OK : déjà vrai avant cette revue ; le verdict du banc ne tient pas compte de BLOQUE (à décider).
 
 **Python à reporter (étape 11 en pause, non touché) :** `code_picar/fastdrink/conduite/demi_tour.py` (150°/210° en dur, fin seulement en phase avant) et `reprise` (`braquage_max_deg_s` 60) dans le fichier de réglages lu par le Python.
+
+## Revue de l'ensemble et des pistes (15 novembre, étape 7)
+
+Revue complète : `Claude outputs/REVUE_07_ENSEMBLE_2026-11-15.md`. Périmètre : garanties du professeur (12-13 nov.) sur les pistes générées (grille et libre) et les 6 pistes Blender.
+
+**Constat (200 graines) :** place avant la face (443 mm + `marge_droite_avant`), place après (`droite_apres_min`), espacement entre obstacles enchaînés et 6 poses du bloc : tout est tenu, 0 violation. Seul risque : avec les réglages par défaut (`autoriser_cases_voisines = true`), 75 obstacles sur 124 avaient un ruban dans une case latérale de leur droite (à 240 mm, sous la voiture qui contourne).
+
+**Ce qui change (P1, choisie par Mehdi) :** `generateur_piste.gd`, `_case_droite` refuse une case dont une case latérale porte du ruban (**HYPOTHÈSE** : « toujours la place pour la manœuvre » n'est pas chiffré). Après : 67 obstacles sur 53 pistes par défaut, 0 avec ruban latéral. `piste_demo.tres` : 226 obstacles, mêmes poses, donc banc inchangé.
+
+**Vérification :** syntaxe sans erreur ; 8 bancs (idéal et réaliste : 40 pistes, 40 libres, D_recul 50 sur 15 pistes, 25 scénarios) : tous OK, 0 collision, CSV identiques aux références de `essais/`.
+
+**Limites :** obstacles Blender tous debout ; `ecart_lignes_min` du libre (240 mm) en HYPOTHÈSE ; verdict du banc ignore BLOQUE ; question à poser au professeur : distance minimale entre un obstacle et un virage ou le ruban.

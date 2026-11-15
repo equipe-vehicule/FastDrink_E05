@@ -26,6 +26,8 @@ Banc d'essai de référence depuis le 13 nov. (étape 5) : pas de 1/240 s, boucl
 
 **Étape 6 de la revue (15 nov., récupération de la ligne) faite :** `reprise:braquage_max_deg_s` 120 → 60 (hypothèse), fin du `DEMI_TOUR` seulement en marche avant, seuils 150°/210° dans `reglages_algorithmes.json` ; 8 bancs : verdicts inchangés, 0 collision, bille max des pistes libres 0,94 → 0,80 (idéal) et 1,00 → 0,83 (réaliste) ; détail : `LISEZMOI_SIMULATION.md`, section « Revue de la récupération de la ligne ». **Restes ouverts :** `courbes_120` en BLOQUE avec verdict OK (déjà avant ; le verdict ignore BLOQUE) ; marge min des scénarios idéaux 34,1 → 23,8 mm (`recul_court_deux_obstacles`, toujours sans collision) ; bille en hausse sur quelques graines (15839, 213814) ; graine 47515 en idéal : ARRIVEE après 11 rattrapages (épingle plus serrée que la voiture, comportement prévu) ; Python à reporter (`demi_tour.py`, `reprise`).
 
+**Étape 7 de la revue (15 nov., ensemble et pistes) faite :** garanties du professeur vérifiées sur 200 graines (grille et libre) et les 6 pistes Blender ; `_case_droite` refuse les cases dont une case latérale porte du ruban (P1, hypothèse) ; 8 bancs identiques aux références (0 collision). Détail : `LISEZMOI_SIMULATION.md`, section « Revue de l'ensemble et des pistes ». **Reste ouvert :** question au professeur sur la distance minimale obstacle ↔ ruban ; verdict du banc qui ignore BLOQUE.
+
 **Ce que la simulation ne garantit pas encore :** les valeurs du modèle réaliste viennent du rapport des filtres (3 vitesses moyennes, ultrason à l'arrêt) ; zone morte, temps de réponse, servo et dimensions ne sont pas mesurés. Avant l'étape 9, elle était idéale. Pas de bruit ni de retard sur l'ultrason, pas de zone morte des moteurs, vitesse proportionnelle à la commande, odométrie parfaite, dimensions du robot prises sur le modèle 3D. Tant que ces écarts ne sont pas mesurés et ajoutés, un résultat de simulation ne prédit pas le robot.
 
 ### Ce qu'il reste à faire pour une simulation fidèle (par priorité)
@@ -247,6 +249,10 @@ Le plan de la section 8 est appliqué ; le détail des fichiers est dans `LISEZM
 - Virages du générateur : quarts de cercle (90°) seulement.
 - « Parcours fourni » (sans obstacle) : 4 pertes de ligne d'environ 0,6 s dans les virages serrés, rattrapées. Suivi de ligne, pas lié aux obstacles : à traiter à part.
 - Modèle idéal (pas de bruit sur l'ultrason ni l'odométrie) : à recalibrer sur le robot.
+
+### Derniers résultats : revue de l'ensemble (étape 7, 15 novembre)
+
+8 bancs relancés après P1 : idéal 40/40, libre 40/40, D_recul 50 15/15, scénarios 25/25 ; réaliste idem ; 0 collision ; CSV identiques aux références de `essais/` (bille max 0,80 à 0,89 ; erreur d'arrêt max 15 mm). Pistes par défaut : 0 obstacle avec ruban latéral (avant : 75 sur 124).
 
 ### Derniers résultats : revue du contournement (étape 5, 14 novembre)
 

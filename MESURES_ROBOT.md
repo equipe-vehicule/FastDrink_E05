@@ -94,6 +94,7 @@ Ce ne sont pas des valeurs du robot : elles restent dans les fichiers de la simu
 | Distance d'arrêt devant l'obstacle | 100 mm | `reglages_algorithmes.json` `epreuve:distance_arret_mm` | #12 |
 | Distance de recul | 150 mm | `reglages_algorithmes.json` `epreuve:distance_recul_mm` | #12 |
 | Ligne droite pour s'aligner avant un obstacle (hypothèse) | 140 mm | `parametres_piste.gd` `marge_droite_avant` | #56 |
+| Pas de ruban dans les cases latérales de la droite d'un obstacle (grille) | règle (HYPOTHÈSE : « toujours la place pour la manœuvre » non chiffré) | `generateur_piste.gd` `_case_droite` | #56 |
 | Positions possibles de l'obstacle (debout, tourné, couché) | 6 poses tirées au hasard ; contournement de la plus grande emprise (150 × 150) | `parametres_piste.gd` `faces_aleatoires`, `reglages_epreuve.gd` `largeur_a_contourner_mm()` | à créer |
 | Largeur du ruban | 18 mm (guide) ; 20 mm dans le parcours fourni | pistes | #54 |
 | Angles des virages (hypothèse ; le guide impose seulement le rayon) | 20 à 180° sur les pistes libres | `parametres_piste.gd` `angle_min_deg`, `angle_max_deg` | #73 |

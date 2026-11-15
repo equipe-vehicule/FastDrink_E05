@@ -871,3 +871,17 @@ Revue complète : `Claude outputs/REVUE_07_ENSEMBLE_2026-11-15.md`. Périmètre 
 **Vérification :** syntaxe sans erreur ; 8 bancs (idéal et réaliste : 40 pistes, 40 libres, D_recul 50 sur 15 pistes, 25 scénarios) : tous OK, 0 collision, CSV identiques aux références de `essais/`.
 
 **Limites :** obstacles Blender tous debout ; `ecart_lignes_min` du libre (240 mm) en HYPOTHÈSE ; verdict du banc ignore BLOQUE ; question à poser au professeur : distance minimale entre un obstacle et un virage ou le ruban.
+
+## Revue 08 : manœuvre dans les courbes serrées et verdict BLOQUE (15 nov.)
+
+- **Verdict du banc** : tout passage en BLOQUE est un échec (raison « passage en BLOQUE »). `scenarios.gd` : `courbes_120` attend ARRET.
+- **Fin de ligne** : `Rattrapage.Reaction.FIN_LIGNE` mène à ARRET (arrêt normal, HYPOTHÈSE : sans barre d'arrivée, l'arrêt en bout de ruban vaut arrivée). BLOQUE ne reste que pour les tentatives de rattrapage épuisées.
+- **Manœuvre** : le rattrapage en marche arrière n'a pas changé (rayon minimal 138 mm = empattement 138 / tan 45°). Essais de `apres_s`, `pause_s`, vitesse de recul et `reprise:duree_s` : aucun mieux que les valeurs actuelles.
+- **Banc** : 8 bancs identiques aux références, sauf `courbes_120` (ARRET au lieu de BLOQUE). Références `scenarios_reference*.csv` régénérées (anciennes : `*_avant_revue08.csv`). Détail : `Claude outputs/REVUE_08_MANOEUVRE_SERREE_2026-11-15.md`.
+
+## Revue 08 : manœuvre dans les courbes serrées et verdict BLOQUE (15 nov.)
+
+- **Verdict du banc** : tout passage en BLOQUE est un échec (raison « passage en BLOQUE »). `scenarios.gd` : `courbes_120` attend ARRET.
+- **Fin de ligne** : `Rattrapage.Reaction.FIN_LIGNE` mène à ARRET (arrêt normal, HYPOTHÈSE : sans barre d'arrivée, l'arrêt en bout de ruban vaut arrivée). BLOQUE ne reste que pour les tentatives de rattrapage épuisées.
+- **Manœuvre** : le rattrapage en marche arrière n'a pas changé (rayon minimal 138 mm = empattement 138 / tan 45°). Essais de `apres_s`, `pause_s`, vitesse de recul et `reprise:duree_s` : aucun mieux que les valeurs actuelles.
+- **Banc** : 8 bancs identiques aux références, sauf `courbes_120` (ARRET au lieu de BLOQUE). Références `scenarios_reference*.csv` régénérées (anciennes : `*_avant_revue08.csv`). Détail : `Claude outputs/REVUE_08_MANOEUVRE_SERREE_2026-11-15.md`.

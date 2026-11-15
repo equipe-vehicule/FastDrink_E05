@@ -74,7 +74,7 @@ const LISTE := [
 	{"nom": "s_serre", "but": "Gauche puis droite colles, rayon 120 mm (guide : rayon ; enchainement non exclu)",
 	 "rayon_mm": 120, "chemin": "TTTTGDTTTT", "obstacles": []},
 	{"nom": "courbes_120", "but": "Piste Blender « Courbes de 120 mm » : bille a 0,94 le 12 nov. (#67)", "piste": 1,
-	 "fin_attendue": "BLOQUE"},   # pas de barre d'arrivee : arret en fin de ligne (SUIVI_SIMULATION.md, section 2)
+	 "fin_attendue": "ARRET"},   # pas de barre d arrivee : arret (ARRET, pas BLOQUE) en fin de ligne (SUIVI_SIMULATION.md, section 2)
 	{"nom": "parcours_fourni", "but": "Parcours fourni par le cours : pertes de ligne dans les virages serres (#74)", "piste": 5},
 	{"nom": "demi_tour", "but": "Deux virages du meme cote colles : demi-tour de 240 mm de large (idem)",
 	 "rayon_mm": 120, "chemin": "TTTTDDTTTT", "obstacles": []},

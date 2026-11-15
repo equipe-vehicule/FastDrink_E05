@@ -9,7 +9,7 @@
 class_name Rattrapage
 extends RefCounted
 
-enum Reaction { AUCUNE, RATTRAPER, ARRETER }
+enum Reaction { AUCUNE, RATTRAPER, ARRETER, FIN_LIGNE }
 
 ## Reglages : les valeurs sont dans reglages_algorithmes.json (objet « rattrapage »), lues au demarrage ; ici : type et justification seulement.
 @export var actif: bool
@@ -76,7 +76,8 @@ func observer(dt: float) -> void:
 func ligne_perdue() -> bool:
 	return _ligne_suivie and _suivi.ligne == SuiviLigne.Ligne.PERDUE
 
-## Que faire de la ligne perdue : rien (pas encore), rattraper en marche arriere, ou s'arreter (fin de ligne).
+## Que faire de la ligne perdue : rien (pas encore), rattraper en marche arriere, FIN_LIGNE (arret normal en bout de ruban :
+## HYPOTHESE, sans barre d arrivee l arret en fin de ligne vaut arrivee) ou ARRETER (tentatives epuisees : echec, BLOQUE).
 func reaction() -> Reaction:
 	if not (actif and ligne_perdue() and _suivi.temps_sans_ligne() >= apres_s):
 		return Reaction.AUCUNE
@@ -84,7 +85,7 @@ func reaction() -> Reaction:
 	if not fin_de_ligne and _tentatives < tentatives_max:
 		return Reaction.RATTRAPER
 	if arret_si_introuvable:
-		return Reaction.ARRETER
+		return Reaction.FIN_LIGNE if fin_de_ligne else Reaction.ARRETER
 	return Reaction.AUCUNE
 
 

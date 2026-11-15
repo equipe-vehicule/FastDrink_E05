@@ -263,7 +263,10 @@ func _etat_suivi(sondes: Array, d_mm: float, dt: float) -> Vector2:
 			_changer_etat(Etat.RATTRAPAGE)
 			return Vector2(90.0, 0.0)
 		Rattrapage.Reaction.ARRETER:
-			_changer_etat(Etat.BLOQUE)        # fin de ligne : repart seule si la voiture est reposee sur la ligne
+			_changer_etat(Etat.BLOQUE)        # tentatives epuisees : arret de securite (echec), repart si la ligne est revue
+			return Vector2(90.0, 0.0)
+		Rattrapage.Reaction.FIN_LIGNE:
+			_changer_etat(Etat.ARRET)         # fin de ligne : arret normal (HYPOTHESE : vaut arrivee sans barre)
 			return Vector2(90.0, 0.0)
 	return _approche_obstacle(r.x, r.y, d_mm, dt)
 

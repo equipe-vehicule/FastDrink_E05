@@ -46,12 +46,12 @@ var scenarios: Array = []
 ## ConstructionPiste. Vide pour une piste Blender. A donner apres chaque chargement de piste.
 var obstacles: Array = []
 ## Dernier point de la ligne de la piste en cours (x, z en m ; NAN = inconnu), Pistes.fin_de_ligne(). A donner apres chaque
-## chargement de piste. Sert au controle « fin de ligne atteinte » des scenarios dont fin_attendue vaut BLOQUE.
+## chargement de piste. Sert au controle « fin de ligne atteinte » des scenarios dont fin_attendue vaut ARRET.
 var fin_ligne := Vector2(NAN, NAN)
 ## Axe du ruban de la piste en cours (x, z en m), metadonnee « ligne » ; vide = inconnu. A donner apres chaque chargement.
 var axe_ligne := PackedVector2Array()
-## HYPOTHESE (non issue d'une exigence) : fin_attendue = BLOQUE seulement si la barre de sondes est a moins de ca du
-## dernier point de la ligne au moment de l'arret ; sinon la voiture s'est bloquee en route (ECHEC « bloque_loin_fin_ligne »).
+## HYPOTHESE (non issue d'une exigence) : fin_attendue = ARRET seulement si la barre de sondes est a moins de ca du
+## dernier point de la ligne au moment de l'arret ; sinon la voiture s'est bloquee en route (ECHEC « bloque_loin_fin_ligne » ; un BLOQUE est toujours un echec (revue 08)).
 var distance_fin_ligne_max_mm := 150.0
 
 var termine := false
@@ -228,9 +228,9 @@ static func _texte_raisons(d: Dictionary) -> String:
 	return ";".join(t)
 
 ## Fin de ligne atteinte : distance (mm) de la barre de sondes au dernier point de la ligne, mesuree a l'arret d'un
-## scenario dont fin_attendue vaut BLOQUE. NAN = non controle (autre fin attendue, autre resultat, ligne inconnue).
+## scenario dont fin_attendue vaut ARRET. NAN = non controle (autre fin attendue, autre resultat, ligne inconnue).
 func _mesurer_fin_ligne(v: Vehicule, c: Controleur) -> float:
-	if _fin_attendue != "BLOQUE" or is_nan(fin_ligne.x):
+	if _fin_attendue != "ARRET" or is_nan(fin_ligne.x):
 		return NAN
 	var t := v.global_transform
 	var essieu := t.origin + t.basis.z * (v.empattement / 2.0)
@@ -246,6 +246,8 @@ func _raisons_echec(resultat: String, nb_obstacles: int) -> PackedStringArray:
 	var r: PackedStringArray = []
 	if resultat != _fin_attendue:
 		r.append(resultat)
+	if _compteurs["BLOQUE"] > 0 and resultat != "BLOQUE":
+		r.append("passage en BLOQUE")   # BLOQUE = echec, meme si la voiture est repartie
 	if _collision:
 		r.append("collision")
 	if _erreur_arret_max > ReglagesEpreuve.TOLERANCE_ARRET_MM:

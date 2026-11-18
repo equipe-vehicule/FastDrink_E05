@@ -2,12 +2,12 @@
 '''
 **********************************************************************
 * Filename    : ultra_sonic_avoidance.py
-* Description : An example for sensor car kit to followe light
-* Author      : Dream
-* Brand       : SunFounder
-* E-mail      : service@sunfounder.com
-* Website     : www.sunfounder.com
-* Update      : Dream    2016-09-27    New release
+* Description : Stopping at distance from object with specified speed
+* Author      : Sarah Gosselin
+* Brand       : 
+* E-mail      : sarah@gosselin.xyz
+* Website     : 
+* Update      : Sarah    2026-11-8    New release
 **********************************************************************
 '''
 

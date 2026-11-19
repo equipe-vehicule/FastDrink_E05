@@ -1,7 +1,8 @@
-"""Médiane glissante puis exponentiel (version de référence pour la comparaison).
+"""Filtre A, version simplifiée à alpha fixe (médiane glissante puis exponentiel).
 
-La version détaillée de ce filtre est la partie de l'autre membre ; celle-ci sert seulement
-à comparer les deux filtres sur les mêmes fichiers.
+La version complète du filtre A est filtre_a.py (alpha calculé à partir de tau, règles d'absence
+d'écho). Cette version sert seulement à analyse/analyse_filtres.py, qui produit la figure du robot
+immobile du rapport (alpha = 0,30, équivalent à tau = 0,17 s à 62 ms).
 """
 from collections import deque
 from statistics import median

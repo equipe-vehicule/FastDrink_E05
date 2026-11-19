@@ -1,4 +1,8 @@
-"""Médiane de 3 puis filtre de Kalman : la combinaison retenue après les mesures du 9 nov.
+"""Médiane de 3 puis filtre de Kalman : variante en série du filtre A et du filtre B.
+
+ÉCARTÉE après comparaison sur le bruit réel (rapport, section 6.4) : aucun gain d'arrêt par
+rapport au filtre B seul, moins stable à l'arrêt et plus fragile aux échos parasites. Gardée
+pour reproduire la comparaison.
 
 Pourquoi : le bruit réel du capteur a des valeurs extrêmes rares (environ 1 % à plus de 10 mm).
 Un Kalman seul assez réactif pour suivre les accélérations en accepte parfois une, ce qui fausse

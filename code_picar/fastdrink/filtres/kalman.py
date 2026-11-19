@@ -1,4 +1,7 @@
-"""Filtre de Kalman à vitesse constante pour le capteur ultrason.
+"""Filtre B : filtre de Kalman à vitesse constante pour le capteur ultrason.
+
+Utilisé par le filtre final (filtre_final.py) quand le robot roule : pas de retard, rejet des
+valeurs extrêmes au-delà de 3 écarts types, et arrêt programmé avec la vitesse estimée.
 
 État x = [d, v] : distance (mm) et sa dérivée (mm/s, négative quand le robot s'approche).
 Écrit sans numpy (matrices 2x2 à la main) pour tourner tel quel sur le Raspberry Pi.

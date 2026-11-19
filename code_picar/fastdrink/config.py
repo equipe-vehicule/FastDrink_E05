@@ -11,6 +11,11 @@ ULTRASON_PERIODE_MIN_S = 0.06  # au moins 60 ms entre deux mesures (manuel PiCar
 
 VITESSE_SON_M_S = 343.0        # dans l'air à environ 20 °C
 CAPTEUR_AVANT_MM = 35.3        # distance face du capteur -> avant du véhicule (moyenne de 1000 mesures, 9 nov.)
+# Alias gardé pour ne pas casser ultrasonic_stop_test.py (Sarah, 12 nov.) : même grandeur.
+ULTRASONIC_OFFSET = CAPTEUR_AVANT_MM
+
+# Géométrie du train avant (ajout de Sarah, 12 nov., venu de main)
+FW_WHEEL_OFFSET = 17           # Front Wheels offset to the right.
 
 # Filtre A (médiane de 3 + exponentiel) : utilisé robot IMMOBILE dans le filtre final
 FILTRE_A_TAU_S = 0.17          # constante de temps de l'exponentiel (s) : alpha = 0,30 à 62 ms

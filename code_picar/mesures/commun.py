@@ -37,21 +37,26 @@ def vitesse_m_s(commande):
     return t[-1][1]
 
 
+# Décalage du servo des roues avant pour rouler droit (degrés ; positif = vers la droite).
+# Valeur de départ 17 = FW_WHEEL_OFFSET (config.py, Sarah) ; 18 après un essai le 19 nov. où le robot
+# déviait encore un peu à gauche sur longue distance. Valeur d'essai de Mehdi, à confirmer.
+DECALAGE_ROUES_MESURES = 18
+
+
 @contextmanager
 def robot():
     """Donne (roues arrière, roues avant). À la sortie, quoi qu'il arrive (erreur, Ctrl+C) :
     commande 0, moteurs arrêtés, servo droit."""
     import picar
     from picar import back_wheels, front_wheels
-    from fastdrink.config import FW_WHEEL_OFFSET
     picar.setup()
     bw = back_wheels.Back_Wheels(db='config')
     fw = front_wheels.Front_Wheels(db='config')
     bw.ready()
     fw.ready()
     # Le fichier « config » de picar est à 0 : sans ce décalage, le robot dérive (constaté le 19 nov.).
-    # Même valeur que ultrasonic_stop_test.py ; à ajuster si le robot dévie encore.
-    fw.wheel.offset = FW_WHEEL_OFFSET
+    # ready() remet le décalage à 0 : on l'applique donc après.
+    fw.wheel.offset = DECALAGE_ROUES_MESURES
     fw.turn_straight()
     try:
         yield bw, fw

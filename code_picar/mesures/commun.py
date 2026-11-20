@@ -43,11 +43,15 @@ def robot():
     commande 0, moteurs arrêtés, servo droit."""
     import picar
     from picar import back_wheels, front_wheels
+    from fastdrink.config import FW_WHEEL_OFFSET
     picar.setup()
     bw = back_wheels.Back_Wheels(db='config')
     fw = front_wheels.Front_Wheels(db='config')
     bw.ready()
     fw.ready()
+    # Le fichier « config » de picar est à 0 : sans ce décalage, le robot dérive (constaté le 19 nov.).
+    # Même valeur que ultrasonic_stop_test.py ; à ajuster si le robot dévie encore.
+    fw.wheel.offset = FW_WHEEL_OFFSET
     fw.turn_straight()
     try:
         yield bw, fw

@@ -39,8 +39,9 @@ def vitesse_m_s(commande):
 
 # Décalage du servo des roues avant pour rouler droit (degrés ; positif = vers la droite).
 # Valeur de départ 17 = FW_WHEEL_OFFSET (config.py, Sarah) ; 18 après un essai le 19 nov. où le robot
-# déviait encore un peu à gauche sur longue distance. Valeur d'essai de Mehdi, à confirmer.
-DECALAGE_ROUES_MESURES = 18
+# déviait encore un peu à gauche sur longue distance ; 23 (+5) après un second essai où 18 ne suffisait pas.
+# Valeur d'essai de Mehdi, à confirmer.
+DECALAGE_ROUES_MESURES = 23
 
 
 @contextmanager
